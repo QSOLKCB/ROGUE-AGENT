@@ -1,5 +1,7 @@
 """v0.3 invitation-gated quarantine, HTTP framing and offline moderation tests."""
 import hashlib
+from concurrent.futures import ThreadPoolExecutor
+from unittest.mock import patch
 import http.client
 import json
 from pathlib import Path
@@ -162,6 +164,33 @@ class QuarantineTests(unittest.TestCase):
         with sqlite3.connect(self.quarantine) as conn:
             conn.execute("UPDATE moderation_events SET reason='tampered'")
         self.assertFalse(verify_events(self.quarantine))
+
+    def test_concurrent_identical_requests_are_transactionally_idempotent(self):
+        with ThreadPoolExecutor(max_workers=5) as pool:
+            responses = list(pool.map(lambda _: self.request(), range(5)))
+        self.assertTrue(all(status == 202 for status, _, _ in responses))
+        self.assertEqual(len({payload["submission_id"] for _, _, payload in responses}), 1)
+        self.assertEqual(len(pending_items(self.quarantine)), 1)
+        with sqlite3.connect(self.quarantine) as conn:
+            self.assertEqual(conn.execute("SELECT used_count FROM invitations").fetchone()[0], 1)
+
+    def test_cross_invite_idempotency_namespaces_are_separate(self):
+        token2 = issue_invitation(self.quarantine, "other_agent")
+        first = self.request()[2]["submission_id"]
+        second = self.request(token=token2)[2]["submission_id"]
+        self.assertNotEqual(first, second)
+
+    def test_pending_capacity_fails_closed_without_write(self):
+        self.assertEqual(self.request()[0], 202)
+        with patch("habitat_api.intake.MAX_PENDING_ROWS", 1):
+            code, _, response = self.request(key="capacity-request-key-123456")
+        self.assertEqual((code, response["error"]), (503, "quarantine_capacity_exceeded"))
+        self.assertEqual(len(pending_items(self.quarantine)), 1)
+
+    def test_huge_decimal_content_length_rejected_without_integer_overflow(self):
+        code, _, result = self.request(headers={"Content-Length": "9" * 5000})
+        self.assertEqual((code, result["error"]), (413, "invalid_body_size"))
+        self.assertEqual(len(pending_items(self.quarantine)), 0)
 
     def test_invitation_tokens_never_stored_in_plaintext(self):
         with sqlite3.connect(self.quarantine) as conn:
