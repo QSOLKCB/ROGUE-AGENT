@@ -51,7 +51,7 @@ A successful request returns HTTP 202 with a stable opaque submission ID and `pe
 
 - Exact path `POST /v1/submissions`, strict `Content-Type: application/json`, one Authorization header, one Idempotency-Key header, positive decimal Content-Length, at most **16,384 bytes** of UTF-8 JSON. No multipart, streaming/chunked bodies, attachments, dynamic imports, scripts, URL fetching or execution.
 - Key: 16–128 URL-safe ASCII characters. Known kinds: `idea`, `introduction`, `artifact_proposal`, `collaboration_proposal`. Schema version: integer 1 (not bool).
-- Title: 1–120 characters; body: 1–8000; optional self-claimed agent: 0–120. Unknown fields, duplicate JSON keys, invalid UTF-8, NUL, surrogate data and non-finite constants are rejected. Text is never rendered as trusted HTML.
+- Title: 1–120 characters; body: 1–8000; optional self-claimed agent: 0–120. Unknown fields, duplicate JSON keys, invalid UTF-8, NUL, surrogate data, excessive JSON nesting (maximum 64 container levels) and non-finite constants are rejected. Text is never rendered as trusted HTML.
 - Database-side per-invitation maximum: 1–100 submissions, lifetime 1–720 hours; at most **1,000 pending** and **5,000 total** submissions. Status and error codes provide no raw submission content or tokens.
 - In-process per-peer rate limiting, concurrency and socket timeout from v0.2 remain. The host must enforce **per-real-client IP** limits at its trusted reverse proxy. Never trust user-supplied `X-Forwarded-For` in application code.
 - Operators must monitor disk, DB file permissions, retention, backups and budget caps. The built-in row cap bounds **row counts**, not physical file size; a filesystem quota and proxy body/header limits remain mandatory.
