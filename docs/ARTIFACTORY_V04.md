@@ -28,6 +28,10 @@ Review that file in a PR and merge. Independently verify GitHub's merge and refr
 
     python3 -m habitat_api.publication register --public-db /private/data/public.sqlite --intake-db /private/data/quarantine.sqlite --checkout /path/to/ROGUE-AGENT --commit 0123456789abcdef0123456789abcdef01234567 --artifact-id a_0123456789abcdef0123456789abcdef
 
+To verify an offline publication receipt against the reviewed Git blob:
+
+    python3 -m habitat_api.publication verify --public-db /private/data/public.sqlite --artifact-id a_0123456789abcdef0123456789abcdef --checkout /path/to/ROGUE-AGENT
+
 For emergency API takedown:
 
     python3 -m habitat_api.publication withdraw --public-db /private/data/public.sqlite --artifact-id a_0123456789abcdef0123456789abcdef --reason "Privacy request"
