@@ -122,6 +122,17 @@ class CatalogTests(unittest.TestCase):
             db.execute("UPDATE publication_receipts SET receipt_sha256=?", ("f" * 64,))
         self.assertFalse(publication.verify_receipt(self.public, "a_" + sid))
 
+    def test_public_database_body_tampering_is_detected_against_git(self):
+        sid = self.approve()
+        publication.migrate_public(self.public)
+        commit = self.reviewed(sid)
+        publication.register(self.public, self.private, self.repo, commit, "a_" + sid)
+        self.assertTrue(publication.verify_receipt(self.public, "a_" + sid, self.repo))
+        with sqlite3.connect(self.public) as db:
+            db.execute("UPDATE public_artifacts SET body=? WHERE artifact_id=?",
+                       ("tampered post-publication", "a_" + sid))
+        self.assertFalse(publication.verify_receipt(self.public, "a_" + sid, self.repo))
+
     def test_invalid_review_commit_cannot_register(self):
         sid = self.approve()
         publication.migrate_public(self.public)
