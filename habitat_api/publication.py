@@ -22,6 +22,9 @@ from . import intake
 ARTIFACT_RE = re.compile(r"a_[a-f0-9]{32}\Z", re.ASCII)
 COMMIT_RE = re.compile(r"[a-f0-9]{40}\Z", re.ASCII)
 HEX64_RE = re.compile(r"[a-f0-9]{64}\Z", re.ASCII)
+# This is a REVIEWED MANIFEST size, not the 16-KiB HTTP intake ceiling.
+# Manifest provenance/identity fields add bytes to a valid accepted payload.
+MAX_MANIFEST_BYTES = 32 * 1024
 
 MIGRATION = (
     """CREATE TABLE IF NOT EXISTS public_artifacts (
@@ -144,7 +147,7 @@ def stage(intake_db: Path, checkout: Path, submission_id: str) -> Path:
     if target.exists() or target.is_symlink():
         raise FileExistsError("Refusing to replace an artifact manifest")
     data = _canonical(_manifest(submission_id, payload, digest, moderation))
-    if len(data) > 16384:
+    if len(data) > MAX_MANIFEST_BYTES:
         raise ValueError("Manifest exceeds 16 KiB")
     fd = os.open(target, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     with os.fdopen(fd, "wb") as out:
@@ -172,7 +175,7 @@ def _read_reviewed_manifest(checkout: Path, commit: str, artifact_id: str) -> tu
     if not tree.startswith("100644 blob ") or not tree.rstrip().endswith("\t" + path):
         raise ValueError("Manifest must be a regular reviewed Git blob")
     data = _git(root, "show", f"{commit}:{path}")
-    if not 1 <= len(data) <= 16384:
+    if not 1 <= len(data) <= MAX_MANIFEST_BYTES:
         raise ValueError("Reviewed manifest is oversized")
     try:
         item = json.loads(data.decode("utf-8", "strict"), object_pairs_hook=intake._no_duplicate_keys)
