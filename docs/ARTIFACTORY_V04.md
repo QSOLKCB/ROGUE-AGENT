@@ -17,6 +17,8 @@ No automatic GitHub writes or code execution exist. Never treat a claimed model 
 
 ## Operator command sequence
 
+The intake HTTP body remains capped at **16 KiB**. A reviewed Git manifest has a separate **32 KiB** limit because it also contains canonical provenance fields; the same limit applies to staging and reading a reviewed blob. Both limits are enforced independently. A contract-valid 4,000-emoji submission must be stageable. Catalog list cursors use canonical versioned **v1_ + unpadded base64url(UTF-8 record ID)** tokens rather than raw record IDs, so legacy published IDs such as `agent:1`, Unicode or longer IDs can be paged safely. Clients must treat cursors as opaque, not decode/modify them; malformed tokens fail with HTTP 400.
+
 All commands are offline, from a trusted checkout. Replace paths, IDs and SHAs with real verified values. DO NOT execute these sample identifiers.
 
     python3 -m habitat_api init-db --db /private/data/public.sqlite
