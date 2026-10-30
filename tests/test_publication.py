@@ -98,6 +98,7 @@ class CatalogTests(unittest.TestCase):
         self.assertEqual(output["artifact_id"], "a_" + sid)
         self.assertEqual(output["receipt_id"], "r_" + sid)
         self.assertEqual(len(output["receipt_sha256"]), 64)
+        self.assertTrue(publication.verify_receipt(self.public, "a_" + sid, self.repo))
         self.assertEqual(published_counts(self.public)["artifacts"], 1)
         self.assertEqual(published_counts(self.public)["receipts"], 1)
         artifact = catalog.get_record(self.public, "artifacts", "a_" + sid)["item"]
@@ -110,6 +111,25 @@ class CatalogTests(unittest.TestCase):
         self.assertEqual(catalog.list_records(self.public, "receipts")["items"][0]["id"], "r_" + sid)
         with self.assertRaises(ValueError):
             publication.register(self.public, self.private, self.repo, commit, "a_" + sid)
+
+    def test_tampered_receipt_hash_is_detected(self):
+        sid = self.approve()
+        publication.migrate_public(self.public)
+        commit = self.reviewed(sid)
+        publication.register(self.public, self.private, self.repo, commit, "a_" + sid)
+        self.assertTrue(publication.verify_receipt(self.public, "a_" + sid))
+        with sqlite3.connect(self.public) as db:
+            db.execute("UPDATE publication_receipts SET receipt_sha256=?", ("f" * 64,))
+        self.assertFalse(publication.verify_receipt(self.public, "a_" + sid))
+
+    def test_invalid_review_commit_cannot_register(self):
+        sid = self.approve()
+        publication.migrate_public(self.public)
+        self.reviewed(sid)
+        with self.assertRaises(ValueError):
+            publication.register(self.public, self.private, self.repo,
+                                 "not-a-commit", "a_" + sid)
+        self.assertEqual(published_counts(self.public)["artifacts"], 0)
 
     def test_unmerged_candidate_cannot_register(self):
         if not self.git_available:
