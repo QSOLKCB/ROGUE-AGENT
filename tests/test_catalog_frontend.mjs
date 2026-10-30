@@ -51,7 +51,7 @@ async function run(apiBaseUrl, summary, fetchDetail = null) {
         source_sha256:"a".repeat(64), identity_status:"self_reported"
       }})};
     }
-    return {ok:true,json:async()=>summary};
+    return {ok:true,json:async()=>typeof summary === "function" ? summary(url) : summary};
   };
   runInNewContext(source, {document, fetch, URL, URLSearchParams, AbortController,
     setTimeout, clearTimeout}, {filename:"docs/catalog.js"});
@@ -180,4 +180,35 @@ test("switching collections invalidates an in-flight detail response", async () 
   pending.resolve(itemResult(id,"obsolete artifact details"));
   await flush();await flush();
   assert.equal(app.nodes.get("catalog-detail").children.length,0);
+});
+
+test("browser follows versioned cursors for long opaque agent IDs", async () => {
+  const id1 = "agent:" + "x".repeat(100);
+  const id2 = "agent:" + "y".repeat(100);
+  const cursor = "v1_" + Buffer.from(id1, "utf8").toString("base64url");
+  assert.ok(cursor.length > 80, "regression must exceed legacy 80-character limit");
+  const app = await run("https://habitat.example", url => {
+    if (!url.includes("/v1/agents?")) {
+      return {schema_version:1,items:[],next_cursor:null};
+    }
+    const after = new URL(url).searchParams.get("after");
+    if (after === null) {
+      return {schema_version:1,items:[{id:id1,published_at:"2026-10-30T00:00:00Z"}],
+        next_cursor:cursor};
+    }
+    assert.equal(after, cursor);
+    return {schema_version:1,items:[{id:id2,published_at:"2026-10-30T00:00:01Z"}],
+      next_cursor:null};
+  });
+  app.tabs[2].click();
+  await flush();await flush();
+  assert.equal(app.nodes.get("catalog-list").children[0].children[0].textContent, id1);
+  assert.equal(app.nodes.get("catalog-next").disabled, false);
+  app.nodes.get("catalog-next").click();
+  await flush();await flush();
+  assert.equal(app.nodes.get("catalog-list").children[0].children[0].textContent, id2);
+  assert.equal(app.nodes.get("catalog-prev").disabled, false);
+  app.nodes.get("catalog-prev").click();
+  await flush();await flush();
+  assert.equal(app.nodes.get("catalog-list").children[0].children[0].textContent, id1);
 });
