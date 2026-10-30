@@ -243,13 +243,17 @@ def verify_receipt(public_db: Path, artifact_id: str, checkout: Path | None = No
     with closing(_rw(public_db)) as db:
         row = db.execute(
             "SELECT p.receipt_id,p.source_sha256,p.moderation_sha256,"
-            "p.manifest_sha256,p.review_commit,p.review_path,p.receipt_sha256,r.published_at "
+            "p.manifest_sha256,p.review_commit,p.review_path,p.receipt_sha256,r.published_at,"
+            "a.title,a.body,a.claimed_agent,ar.withdrawn_at "
             "FROM publication_receipts p JOIN public_records r ON r.record_id=p.receipt_id "
+            "JOIN public_artifacts a ON a.artifact_id=p.artifact_id "
+            "JOIN public_records ar ON ar.record_id=p.artifact_id "
             "WHERE p.artifact_id=?", (artifact_id,)
         ).fetchone()
     if row is None:
         return False
-    receipt_id, source, moderation, manifest, commit, path, recorded, published_at = row
+    (receipt_id, source, moderation, manifest, commit, path, recorded, published_at,
+     stored_title, stored_body, stored_agent, withdrawn_at) = row
     candidate = {"schema_version": 1, "artifact_id": artifact_id, "receipt_id": receipt_id,
                  "source_sha256": source, "moderation_sha256": moderation,
                  "manifest_sha256": manifest, "review_commit": commit,
@@ -262,6 +266,12 @@ def verify_receipt(public_db: Path, artifact_id: str, checkout: Path | None = No
         except (ValueError, OSError, subprocess.SubprocessError):
             return False
         if observed_sha != manifest or item["source_sha256"] != source or item["moderation_sha256"] != moderation:
+            return False
+        # Public text is an independently mutable DB copy. Compare it to the
+        # reviewed Git blob while the record is active; withdrawals redact it.
+        if withdrawn_at is None and (stored_title != item["title"] or
+                                     stored_body != item["body"] or
+                                     stored_agent != item["claimed_agent"]):
             return False
     return True
 
