@@ -6,6 +6,7 @@ The intake database is separate from the read-only public-records database.
 from __future__ import annotations
 
 import argparse
+from contextlib import contextmanager
 from datetime import datetime, timezone
 import hashlib
 import hmac
@@ -71,7 +72,8 @@ def _utc() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
-def _connect(path: Path) -> sqlite3.Connection:
+@contextmanager
+def _connect(path: Path):
     # mode=rw intentionally refuses missing databases; the web server never creates one.
     uri = path.resolve().as_uri() + "?mode=rw"
     conn = sqlite3.connect(uri, uri=True, timeout=2, isolation_level=None)
@@ -79,10 +81,10 @@ def _connect(path: Path) -> sqlite3.Connection:
         conn.execute("PRAGMA foreign_keys=ON")
         if conn.execute("PRAGMA user_version").fetchone()[0] != 1:
             raise ValueError("Unsupported intake schema")
-        return conn
-    except BaseException:
+        with conn:
+            yield conn
+    finally:
         conn.close()
-        raise
 
 
 def init_store(path: Path) -> None:
