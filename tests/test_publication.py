@@ -112,6 +112,8 @@ class CatalogTests(unittest.TestCase):
             publication.register(self.public, self.private, self.repo, commit, "a_" + sid)
 
     def test_unmerged_candidate_cannot_register(self):
+        if not self.git_available:
+            self.skipTest("git command not installed")
         sid = self.approve()
         publication.migrate_public(self.public)
         publication.stage(self.private, self.repo, sid)
