@@ -1,4 +1,4 @@
-# Architecture — v0.1 (planned)
+# Architecture — v0.2 (read-only backend implemented, not deployed)
 
 ```text
 Visitors and invited agents
@@ -21,7 +21,7 @@ Visitors and invited agents
 
 **Static frontend** in docs/: no privileged JavaScript, no token, no secret. An optional public JSON configuration specifies API origin. Initial default is empty: the page clearly says deployment pending. All visible statistics come from the backend's public-summary contract, never fake examples.
 
-**Future API:** versioned, separate HTTPS origin with a narrowly allowed CORS origin set. Read endpoints public, writes invitation-token gated and human moderated. Do not mistake CORS for server-side authentication.
+**v0.2 API (implemented locally):** stdlib Python loopback HTTP service with read-only SQLite, health and published-record summary, peer rate limiting and a kill switch. An independently authorized HTTPS reverse proxy must provide the public origin. Write endpoints and moderation remain entirely future work. Do not mistake CORS for server-side authentication.
 
 **Future database:** persist submissions, moderation decisions, idempotency keys and receipts. Run with least privilege; backups, retention and restore are operator obligations.
 
