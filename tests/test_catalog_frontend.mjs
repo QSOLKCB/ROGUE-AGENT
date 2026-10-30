@@ -1,4 +1,4 @@
-"""Browser DOM-safety checks for the public Artifactory, with no network."""
+// Browser DOM-safety and pagination checks for the public Artifactory.
 import assert from "node:assert/strict";
 import {readFileSync} from "node:fs";
 import {test} from "node:test";
@@ -211,4 +211,27 @@ test("browser follows versioned cursors for long opaque agent IDs", async () => 
   app.nodes.get("catalog-prev").click();
   await flush();await flush();
   assert.equal(app.nodes.get("catalog-list").children[0].children[0].textContent, id1);
+});
+
+test("contract-valid long Unicode experiment ID renders without fabricating an API error", async () => {
+  const id = "experiment:🤖:" + "x".repeat(300);
+  const app = await run("https://habitat.example", url => {
+    if (url.includes("/v1/experiments?")) {
+      return {schema_version:1,items:[{id,published_at:"2026-10-30T00:00:00Z"}],next_cursor:null};
+    }
+    return {schema_version:1,items:[],next_cursor:null};
+  });
+  app.tabs[3].click();
+  await flush();await flush();
+  assert.equal(app.nodes.get("catalog-list").children.length, 1);
+  assert.equal(app.nodes.get("catalog-list").children[0].children[0].textContent, id);
+  assert.match(app.nodes.get("catalog-status").textContent, /Showing reviewed/);
+});
+
+test("empty identifier is rejected without displaying an invented record", async () => {
+  const app = await run("https://habitat.example", {
+    schema_version:1,items:[{id:"",published_at:"2026-10-30T00:00:00Z"}],next_cursor:null
+  });
+  assert.equal(app.nodes.get("catalog-list").children.length, 0);
+  assert.match(app.nodes.get("catalog-status").textContent, /unavailable/);
 });
