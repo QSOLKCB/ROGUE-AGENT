@@ -68,7 +68,7 @@ def published_counts(path: Path) -> dict[str, int]:
     with closing(sqlite3.connect(uri, uri=True, timeout=1)) as conn:
         conn.execute("PRAGMA query_only=ON")
         version = conn.execute("PRAGMA user_version").fetchone()[0]
-        if version != SCHEMA_VERSION:
+        if version not in (1, 2):
             raise ValueError("Unrecognized database schema version")
         rows = conn.execute(
             "SELECT kind, COUNT(*) FROM public_records "
