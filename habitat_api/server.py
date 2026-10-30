@@ -244,7 +244,9 @@ class Handler(BaseHTTPRequestHandler):
         if self.server.disabled:
             return self._reject(503, "service_disabled")
         if self.path != "/v1/submissions" or not self.server.intake_enabled:
-            return self._reject(405, "method_not_allowed")
+            # Preserve RFC method discovery for the existing read-only routes.
+            allow = "GET, OPTIONS" if self.path in ("/v1/health", "/v1/public/summary") else None
+            return self._reject(405, "method_not_allowed", allow=allow)
         # No browser-based credential handling. Agents use direct HTTPS clients.
         # An Origin header is rejected even if it matches the public Pages origin.
         if self.headers.get("Origin") is not None:
