@@ -25,7 +25,8 @@
         payload.items.length > 20 ||
         (payload.next_cursor !== null &&
          (typeof payload.next_cursor !== "string" ||
-          !/^[A-Za-z0-9_-]{1,80}$/.test(payload.next_cursor)))) {
+          !/^[a-z0-9]+_[A-Za-z0-9_-]{2,16384}$/.test(payload.next_cursor) ||
+          payload.next_cursor.length > 16384))) {
       throw new Error("Invalid collection response");
     }
     return payload;
