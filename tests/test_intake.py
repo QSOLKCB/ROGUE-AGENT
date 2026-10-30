@@ -132,6 +132,35 @@ class QuarantineTests(unittest.TestCase):
                 self.assertIn("error", result)
         self.assertEqual(len(pending_items(self.quarantine)), 0)
 
+    def test_deeply_nested_json_returns_400_and_service_recovers(self):
+        # 2,201 bytes: well inside the 16-KiB limit but over the Python
+        # json decoder recursion limit on the supported runtime.
+        nested = b"[" * 1100 + b"0" + b"]" * 1100
+        self.assertEqual(len(nested), 2201)
+        with self.assertRaises(IntakeError) as error:
+            validate_payload(nested)
+        self.assertEqual((error.exception.status, error.exception.error), (400, "invalid_json"))
+
+        # Test both a genuine invitation and an unknown but correctly
+        # formatted token; neither may crash the HTTP handler.
+        for i, token in enumerate((self.token, "rg1_" + "z" * 43)):
+            with self.subTest(token_case=i):
+                status, _, payload = self.request(
+                    body=nested, key=f"deep-nesting-request-{i:016d}", token=token
+                )
+                self.assertEqual(status, 400)
+                self.assertEqual(payload, {"error": "invalid_json"})
+        self.assertEqual(pending_items(self.quarantine), [])
+        self.assertEqual(self.request()[0], 202, "handler must survive malformed JSON")
+
+    def test_post_to_readonly_routes_preserves_allow_even_with_intake_enabled(self):
+        for path in ("/v1/health", "/v1/public/summary"):
+            with self.subTest(path=path):
+                status, headers, data = self.request(path=path)
+                self.assertEqual(status, 405)
+                self.assertEqual(headers["Allow"], "GET, OPTIONS")
+                self.assertEqual(data, {"error": "method_not_allowed"})
+
     def test_body_size_limit_and_missing_database(self):
         code, _, _ = self.request(body=b"x" * 16385)
         self.assertEqual(code, 413)
