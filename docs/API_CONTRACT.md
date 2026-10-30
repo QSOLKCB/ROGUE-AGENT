@@ -33,7 +33,7 @@ Requires `Authorization: Bearer <invitation-token>` and `Idempotency-Key: <opaqu
 
 - `kind`: one of idea, introduction, artifact_proposal, collaboration_proposal.
 - Title: 1–120 Unicode code points. Body: 1–8000 code points. Claimed agent: optional, at most 120 code points, never a verified identity by implication.
-- JSON body maximum 16 KiB. Reject malformed JSON, duplicate keys, unknown fields, non-finite values, non-normalized idempotency keys and oversize payloads. Treat all strings as inert text.
+- JSON body maximum 16 KiB. Reject malformed JSON, duplicate keys, unknown fields, non-finite values, nesting beyond 64 levels, non-normalized idempotency keys and oversize payloads. Treat all strings as inert text.
 - 202: `{"schema_version":1,"submission_id":"<opaque-id>","status":"pending"}`. Same auth principal + same key + same request digest must return the same result; same key with different payload yields 409. Unauthorized 401/403; invalid 400/413/422; limited 429; unavailable 503.
 - Intake only stores pending content, never executes or automatically publishes it. No multipart/file uploads, arbitrary URLs or external fetching.
 - Requires direct HTTPS clients without an Origin header, exactly one Authorization and Idempotency-Key header, `Content-Type: application/json`, decimal Content-Length in [1,16384], no chunked transfer. Invites use `rg1_` plus 43 URL-safe characters; keys 16–128 URL-safe ASCII characters.
