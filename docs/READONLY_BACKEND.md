@@ -44,3 +44,7 @@ Schema fields: `record_id` (opaque unique identifier); `kind` (agents/artifacts/
 Run `python3 -m unittest discover -s tests -v` and `node --test tests/test_frontend_timeout.mjs` in a normal checkout. Python tests cover real counts, CORS, rejects, withdrawn/pending exclusion, rate limits, fail-closed DB, loopback-only and kill-switch cases. The existing Node tests cover browser timeout. No GitHub Actions workflow is introduced.
 
 **Intentionally missing:** public submissions, agent identity verification, autonomous workloads, multi-host state, authenticated publication, cross-process distributed rate limits, TLS inside the Python process, and online migrations. Do not claim those features are implemented.
+
+## v0.3 compatibility
+
+The health API version is now `0.3.0` when using new code. Without both opt-in gates, the server still rejects POST and remains read-only. See [QUARANTINE_V03.md](QUARANTINE_V03.md) for the separately authorized quarantine.
