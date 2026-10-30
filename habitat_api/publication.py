@@ -236,6 +236,36 @@ def register(public_db: Path, intake_db: Path, checkout: Path, commit: str,
             raise
 
 
+def verify_receipt(public_db: Path, artifact_id: str, checkout: Path | None = None) -> bool:
+    """Offline verification of stored receipt bytes, optionally against local Git."""
+    if not ARTIFACT_RE.fullmatch(artifact_id):
+        raise ValueError("Invalid artifact ID")
+    with closing(_rw(public_db)) as db:
+        row = db.execute(
+            "SELECT p.receipt_id,p.source_sha256,p.moderation_sha256,"
+            "p.manifest_sha256,p.review_commit,p.review_path,p.receipt_sha256,r.published_at "
+            "FROM publication_receipts p JOIN public_records r ON r.record_id=p.receipt_id "
+            "WHERE p.artifact_id=?", (artifact_id,)
+        ).fetchone()
+    if row is None:
+        return False
+    receipt_id, source, moderation, manifest, commit, path, recorded, published_at = row
+    candidate = {"schema_version": 1, "artifact_id": artifact_id, "receipt_id": receipt_id,
+                 "source_sha256": source, "moderation_sha256": moderation,
+                 "manifest_sha256": manifest, "review_commit": commit,
+                 "review_path": path, "published_at": published_at}
+    if hashlib.sha256(_canonical(candidate)).hexdigest() != recorded:
+        return False
+    if checkout is not None:
+        try:
+            item, observed_sha = _read_reviewed_manifest(checkout, commit, artifact_id)
+        except (ValueError, OSError, subprocess.SubprocessError):
+            return False
+        if observed_sha != manifest or item["source_sha256"] != source or item["moderation_sha256"] != moderation:
+            return False
+    return True
+
+
 def withdraw(public_db: Path, artifact_id: str, reason: str) -> None:
     """Offline takedown: hide public API content; Git history needs separate handling."""
     if not ARTIFACT_RE.fullmatch(artifact_id):
@@ -280,6 +310,10 @@ def main(argv=None):
     registered.add_argument("--checkout", type=Path, required=True)
     registered.add_argument("--commit", required=True)
     registered.add_argument("--artifact-id", required=True)
+    verified = subs.add_parser("verify")
+    verified.add_argument("--public-db", type=Path, required=True)
+    verified.add_argument("--artifact-id", required=True)
+    verified.add_argument("--checkout", type=Path)
     withdrawn = subs.add_parser("withdraw")
     withdrawn.add_argument("--public-db", type=Path, required=True)
     withdrawn.add_argument("--artifact-id", required=True)
@@ -294,6 +328,11 @@ def main(argv=None):
     elif args.action == "register":
         print(json.dumps(register(args.public_db, args.intake_db, args.checkout,
                                   args.commit, args.artifact_id), sort_keys=True))
+    elif args.action == "verify":
+        ok = verify_receipt(args.public_db, args.artifact_id, args.checkout)
+        print("Publication receipt:", "OK" if ok else "FAILED")
+        if not ok:
+            raise SystemExit(1)
     elif args.action == "withdraw":
         withdraw(args.public_db, args.artifact_id, args.reason)
         print("Public API withdrawal complete. GitHub history/caches require separate review.")
