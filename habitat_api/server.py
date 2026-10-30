@@ -262,6 +262,10 @@ class Handler(BaseHTTPRequestHandler):
         lengths = self.headers.get_all("Content-Length", [])
         if len(lengths) != 1 or not lengths[0].isascii() or not lengths[0].isdecimal():
             return self._reject(411, "content_length_required")
+        # A huge decimal literal can exceed Python's integer-string limit.
+        # Bound its length before conversion rather than producing a 503.
+        if len(lengths[0]) > len(str(intake.MAX_BODY_BYTES)):
+            return self._reject(413, "invalid_body_size")
         size = int(lengths[0])
         if size < 1 or size > intake.MAX_BODY_BYTES:
             return self._reject(413, "invalid_body_size")
