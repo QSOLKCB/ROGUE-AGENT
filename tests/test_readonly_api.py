@@ -100,6 +100,15 @@ class ReadOnlyAPITests(unittest.TestCase):
             self.assertNotEqual(status, 202)
         self.assertEqual(published_counts(self.db)["agents"], 0)
 
+    def test_post_to_existing_readonly_routes_advertises_allow(self):
+        # An unconfigured v0.3 server must preserve the v0.2 HTTP contract.
+        for path in ("/v1/health", "/v1/public/summary"):
+            with self.subTest(path=path):
+                status, headers, body = self.request("POST", path, body="unused")
+                self.assertEqual(status, 405)
+                self.assertEqual(headers["allow"], "GET, OPTIONS")
+                self.assertEqual(body, {"error": "method_not_allowed"})
+
     def test_ambiguous_path_and_get_with_body_are_rejected(self):
         for path in ("/v1/public/summary?all=true", "/v1/public/summary/", "/v1/public/summary%2F", "/.env"):
             self.assertEqual(self.request("GET", path)[0], 404)
