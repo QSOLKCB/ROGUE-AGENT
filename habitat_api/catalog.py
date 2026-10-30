@@ -5,6 +5,8 @@ All returned data is plain JSON; user-contributed content is never trusted HTML.
 """
 from __future__ import annotations
 
+import base64
+import binascii
 from contextlib import closing
 from pathlib import Path
 import re
@@ -12,7 +14,10 @@ import sqlite3
 
 COLLECTIONS = ("artifacts", "receipts", "agents", "experiments")
 ID_RE = re.compile(r"(?:a_|r_)[a-f0-9]{32}\Z", re.ASCII)
-CURSOR_RE = re.compile(r"[A-Za-z0-9_-]{1,80}\Z", re.ASCII)
+# Opaque, versioned UTF-8/base64url cursors preserve *all* record-id characters,
+# including punctuation that is invalid in a raw URL-safe cursor.
+MAX_CURSOR_CHARS = 16384
+CURSOR_RE = re.compile(r"v1_[A-Za-z0-9_-]{2,16384}\Z", re.ASCII)
 
 
 class CatalogError(Exception):
@@ -20,6 +25,31 @@ class CatalogError(Exception):
         self.status = status
         self.message = message
         super().__init__(message)
+
+
+def _encode_cursor(record_id: str) -> str:
+    token = base64.urlsafe_b64encode(record_id.encode("utf-8")).decode("ascii").rstrip("=")
+    cursor = "v1_" + token
+    if len(cursor) > MAX_CURSOR_CHARS:
+        raise CatalogError(503, "unrepresentable_record_cursor")
+    return cursor
+
+
+def _decode_cursor(cursor: str | None) -> str:
+    if cursor is None:
+        return ""
+    if type(cursor) is not str or len(cursor) > MAX_CURSOR_CHARS or not CURSOR_RE.fullmatch(cursor):
+        raise CatalogError(400, "invalid_cursor")
+    encoded = cursor[3:]
+    try:
+        raw = base64.b64decode(encoded + "=" * (-len(encoded) % 4),
+                               altchars=b"-_", validate=True)
+        record_id = raw.decode("utf-8", "strict")
+    except (binascii.Error, UnicodeError, ValueError):
+        raise CatalogError(400, "invalid_cursor") from None
+    if not record_id or _encode_cursor(record_id) != cursor:
+        raise CatalogError(400, "invalid_cursor")
+    return record_id
 
 
 def _connect(path: Path):
@@ -38,8 +68,7 @@ def _connect(path: Path):
 def list_records(path: Path, kind: str, *, limit: int = 20, after: str | None = None) -> dict:
     if kind not in COLLECTIONS or type(limit) is not int or not 1 <= limit <= 50:
         raise CatalogError(400, "invalid_collection_request")
-    if after is not None and (type(after) is not str or not CURSOR_RE.fullmatch(after)):
-        raise CatalogError(400, "invalid_cursor")
+    after_id = _decode_cursor(after)
     with closing(_connect(path)) as db:
         if kind == "artifacts":
             rows = db.execute(
@@ -49,7 +78,7 @@ def list_records(path: Path, kind: str, *, limit: int = 20, after: str | None = 
                 "WHERE r.kind='artifacts' AND r.publication_state='published' "
                 "AND r.withdrawn_at IS NULL AND r.record_id>? "
                 "ORDER BY r.record_id LIMIT ?",
-                (after or "", limit + 1),
+                (after_id, limit + 1),
             ).fetchall()
             items = [
                 {"id": row[0], "title": row[1], "claimed_agent": row[2],
@@ -66,7 +95,7 @@ def list_records(path: Path, kind: str, *, limit: int = 20, after: str | None = 
                 "WHERE r.kind='receipts' AND r.publication_state='published' "
                 "AND r.withdrawn_at IS NULL AND ar.withdrawn_at IS NULL "
                 "AND r.record_id>? ORDER BY r.record_id LIMIT ?",
-                (after or "", limit + 1),
+                (after_id, limit + 1),
             ).fetchall()
             items = [
                 {"id": row[0], "artifact_id": row[1], "published_at": row[2],
@@ -85,7 +114,7 @@ def list_records(path: Path, kind: str, *, limit: int = 20, after: str | None = 
     more = len(items) > limit
     page = items[:limit]
     return {"schema_version": 1, "items": page,
-            "next_cursor": page[-1]["id"] if more else None}
+            "next_cursor": _encode_cursor(page[-1]["id"]) if more else None}
 
 
 def get_record(path: Path, kind: str, identifier: str) -> dict:
