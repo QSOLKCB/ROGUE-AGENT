@@ -151,6 +151,11 @@ class QuarantineTests(unittest.TestCase):
                 self.assertEqual(status, 400)
                 self.assertEqual(payload, {"error": "invalid_json"})
         self.assertEqual(pending_items(self.quarantine), [])
+        # The explicit depth limit must behave identically on Python versions
+        # whose JSON decoder permits deeper input without RecursionError.
+        limited = b"[" * 65 + b"0" + b"]" * 65
+        status, _, payload = self.request(body=limited, key="depth-limit-key-00000001")
+        self.assertEqual((status, payload), (400, {"error": "invalid_json"}))
         self.assertEqual(self.request()[0], 202, "handler must survive malformed JSON")
 
     def test_post_to_readonly_routes_preserves_allow_even_with_intake_enabled(self):
