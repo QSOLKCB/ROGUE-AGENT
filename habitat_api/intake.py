@@ -93,8 +93,12 @@ def init_store(path: Path) -> None:
         raise ValueError("Intake database parent directory does not exist")
     if path.exists():
         raise FileExistsError("Refusing to overwrite an intake database")
-    with sqlite3.connect(str(path)) as conn:
-        conn.executescript(SCHEMA)
+    conn = sqlite3.connect(str(path), timeout=2)
+    try:
+        with conn:
+            conn.executescript(SCHEMA)
+    finally:
+        conn.close()
 
 
 def issue_invitation(path: Path, principal: str, *, hours: int = 24, limit: int = 10) -> str:
