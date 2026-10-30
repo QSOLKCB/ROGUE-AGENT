@@ -160,15 +160,20 @@ class ReadOnlyAPITests(unittest.TestCase):
         thread = threading.Thread(target=ipv6_server.serve_forever, daemon=True)
         thread.start()
         try:
-            conn = http.client.HTTPConnection("::1", ipv6_server.server_port, timeout=3)
-            try:
-                conn.request("GET", "/v1/health")
-                response = conn.getresponse()
-                self.assertEqual(response.status, 200)
-                self.assertEqual(json.loads(response.read())["api_version"], "0.2.0")
-                conn.request("GET", "/v1/public/summary")
-            finally:
-                conn.close()
+            for path in ("/v1/health", "/v1/public/summary"):
+                with self.subTest(path=path):
+                    conn = http.client.HTTPConnection("::1", ipv6_server.server_port, timeout=3)
+                    try:
+                        conn.request("GET", path)
+                        response = conn.getresponse()
+                        self.assertEqual(response.status, 200)
+                        data = json.loads(response.read())
+                        if path == "/v1/health":
+                            self.assertEqual(data["api_version"], "0.2.0")
+                        else:
+                            self.assertEqual(data["counts"]["agents"], 0)
+                    finally:
+                        conn.close()
             # The API still binds to the exact loopback host, never a wildcard.
             self.assertEqual(ipv6_server.server_address[0], "::1")
         finally:
