@@ -192,48 +192,57 @@ def _read_reviewed_manifest(checkout: Path, commit: str, artifact_id: str) -> tu
 def register(public_db: Path, intake_db: Path, checkout: Path, commit: str,
              artifact_id: str) -> dict:
     """Offline registration AFTER explicit human review and merge of a manifest."""
+    if public_db.resolve() == intake_db.resolve():
+        raise ValueError("Public and quarantine databases must be separate")
     item, manifest_hash = _read_reviewed_manifest(checkout, commit, artifact_id)
-    payload, source, moderation = _approved(intake_db, item["submission_id"])
-    if item != _manifest(item["submission_id"], payload, source, moderation):
-        raise ValueError("Reviewed manifest differs from approved quarantine evidence")
-    if item["artifact_id"] != artifact_id:
-        raise ValueError("Mismatched artifact ID")
-    receipt_id = "r_" + item["submission_id"]
-    path = f"artifactory/manifests/{artifact_id}.json"
-    with closing(_rw(public_db)) as db:
-        try:
-            db.execute("BEGIN IMMEDIATE")
-            if db.execute("PRAGMA user_version").fetchone()[0] != 2:
-                raise ValueError("Public database needs explicit v0.4 migration")
-            existing = db.execute("SELECT manifest_sha256,review_commit FROM public_artifacts "
-                                  "WHERE artifact_id=?", (artifact_id,)).fetchone()
-            if existing is not None:
-                raise ValueError("Artifact already registered; no silent republishing")
-            now = _utc()
-            ref = f"github:QSOLKCB/ROGUE-AGENT@{commit}:{path}"
-            for record_id, kind in ((artifact_id, "artifacts"), (receipt_id, "receipts")):
-                db.execute("INSERT INTO public_records "
-                           "(record_id,kind,publication_state,source_ref,published_at) "
-                           "VALUES (?,?,'published',?,?)", (record_id, kind, ref, now))
-            db.execute("INSERT INTO public_artifacts VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-                       (artifact_id, item["submission_id"], item["title"], item["body"],
-                        item["claimed_agent"], source, moderation, manifest_hash,
-                        receipt_id, commit, path))
-            receipt = {"schema_version": 1, "artifact_id": artifact_id, "receipt_id": receipt_id,
-                       "source_sha256": source, "moderation_sha256": moderation,
-                       "manifest_sha256": manifest_hash, "review_commit": commit,
-                       "review_path": path, "published_at": now}
-            receipt_hash = hashlib.sha256(_canonical(receipt)).hexdigest()
-            db.execute("INSERT INTO publication_receipts VALUES (?,?,?,?,?,?,?,?)",
-                       (receipt_id, artifact_id, receipt_hash, source, moderation,
-                        manifest_hash, commit, path))
-            db.execute("COMMIT")
-            return {"artifact_id": artifact_id, "receipt_id": receipt_id,
-                    "receipt_sha256": receipt_hash, "published_at": now}
-        except BaseException:
-            if db.in_transaction:
-                db.execute("ROLLBACK")
-            raise
+    # Moderation uses BEGIN IMMEDIATE against this same SQLite database.
+    # Hold the quarantine write reservation from the approval check until
+    # *after* the public transaction commits (or rolls back), including
+    # periods when the public database is itself locked by another writer.
+    # SQLite enforces this across processes; a threading lock would not.
+    with intake._connect(intake_db) as approval_guard:
+        approval_guard.execute("BEGIN IMMEDIATE")
+        payload, source, moderation = _approved(intake_db, item["submission_id"])
+        if item != _manifest(item["submission_id"], payload, source, moderation):
+            raise ValueError("Reviewed manifest differs from approved quarantine evidence")
+        if item["artifact_id"] != artifact_id:
+            raise ValueError("Mismatched artifact ID")
+        receipt_id = "r_" + item["submission_id"]
+        path = f"artifactory/manifests/{artifact_id}.json"
+        with closing(_rw(public_db)) as db:
+            try:
+                db.execute("BEGIN IMMEDIATE")
+                if db.execute("PRAGMA user_version").fetchone()[0] != 2:
+                    raise ValueError("Public database needs explicit v0.4 migration")
+                existing = db.execute("SELECT manifest_sha256,review_commit FROM public_artifacts "
+                                      "WHERE artifact_id=?", (artifact_id,)).fetchone()
+                if existing is not None:
+                    raise ValueError("Artifact already registered; no silent republishing")
+                now = _utc()
+                ref = f"github:QSOLKCB/ROGUE-AGENT@{commit}:{path}"
+                for record_id, kind in ((artifact_id, "artifacts"), (receipt_id, "receipts")):
+                    db.execute("INSERT INTO public_records "
+                               "(record_id,kind,publication_state,source_ref,published_at) "
+                               "VALUES (?,?,'published',?,?)", (record_id, kind, ref, now))
+                db.execute("INSERT INTO public_artifacts VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                           (artifact_id, item["submission_id"], item["title"], item["body"],
+                            item["claimed_agent"], source, moderation, manifest_hash,
+                            receipt_id, commit, path))
+                receipt = {"schema_version": 1, "artifact_id": artifact_id, "receipt_id": receipt_id,
+                           "source_sha256": source, "moderation_sha256": moderation,
+                           "manifest_sha256": manifest_hash, "review_commit": commit,
+                           "review_path": path, "published_at": now}
+                receipt_hash = hashlib.sha256(_canonical(receipt)).hexdigest()
+                db.execute("INSERT INTO publication_receipts VALUES (?,?,?,?,?,?,?,?)",
+                           (receipt_id, artifact_id, receipt_hash, source, moderation,
+                            manifest_hash, commit, path))
+                db.execute("COMMIT")
+                return {"artifact_id": artifact_id, "receipt_id": receipt_id,
+                        "receipt_sha256": receipt_hash, "published_at": now}
+            except BaseException:
+                if db.in_transaction:
+                    db.execute("ROLLBACK")
+                raise
 
 
 def verify_receipt(public_db: Path, artifact_id: str, checkout: Path | None = None) -> bool:
