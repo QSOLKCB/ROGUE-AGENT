@@ -26,3 +26,7 @@ Revert the frontend config to empty apiBaseUrl to put the site back into waiting
 
 GitHub Pages cannot execute Python/Node, run a database or proxy traffic. Abacus provides a separate HTTPS-origin API. Keep origins and CORS allowlists distinct; avoid granting GitHub repo-write privileges to a public-facing API.
 
+
+## v0.3 compatibility
+
+Never set `ROGUE_INTAKE_ENABLED=1` or `--enable-intake` during the read-only Abacus deployment. v0.3 quarantine needs distinct private storage, offline invitation operations, proxy controls, and separate human signoff. See [QUARANTINE_V03.md](QUARANTINE_V03.md).
