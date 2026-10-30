@@ -30,3 +30,7 @@ GitHub Pages cannot execute Python/Node, run a database or proxy traffic. Abacus
 ## v0.3 compatibility
 
 Never set `ROGUE_INTAKE_ENABLED=1` or `--enable-intake` during the read-only Abacus deployment. v0.3 quarantine needs distinct private storage, offline invitation operations, proxy controls, and separate human signoff. See [QUARANTINE_V03.md](QUARANTINE_V03.md).
+
+## v0.4 collection deployment boundary
+
+Public catalog routes require an **explicit offline migration** from public SQLite schema v1 to v2, with backup/restore rehearsal and review of DB file ownership. The read-only API service must not have DB write rights; the offline publication operator must have a separate account. GitHub Pages catalog browser remains offline while docs/config.json has a blank API origin. A separately authorized HTTPS deployment and config PR are required to show genuine published artifacts. No automatic Github or Abacus operations are added. See [ARTIFACTORY_V04.md](ARTIFACTORY_V04.md).
