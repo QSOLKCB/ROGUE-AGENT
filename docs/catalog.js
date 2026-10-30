@@ -110,7 +110,7 @@
       if (current !== generation) return;
       nextCursor = data.next_cursor;
       for (const item of data.items) {
-        if (!item || typeof item.id !== "string" || item.id.length > 80) {
+        if (!item || typeof item.id !== "string" || item.id.length === 0) {
           throw new Error("Invalid entry");
         }
         const card = document.createElement("article");
