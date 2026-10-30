@@ -140,7 +140,9 @@ def validate_payload(body: bytes) -> tuple[str, str]:
             object_pairs_hook=_no_duplicate_keys,
             parse_constant=lambda _: (_ for _ in ()).throw(ValueError("Non-finite number")),
         )
-    except (UnicodeError, ValueError):
+    except (UnicodeError, ValueError, RecursionError):
+        # Deeply nested JSON can hit the interpreter recursion limit while
+        # decoding even when the request is well below MAX_BODY_BYTES.
         raise IntakeError(400, "invalid_json") from None
     if type(payload) is not dict or not {"schema_version", "kind", "title", "body"} <= payload.keys():
         raise IntakeError(422, "invalid_submission")
@@ -161,7 +163,7 @@ def validate_payload(body: bytes) -> tuple[str, str]:
     try:
         canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
         canonical_bytes = canonical.encode("utf-8", "strict")
-    except (ValueError, UnicodeError):
+    except (ValueError, UnicodeError, RecursionError):
         raise IntakeError(422, "invalid_submission") from None
     return canonical, hashlib.sha256(canonical_bytes).hexdigest()
 
