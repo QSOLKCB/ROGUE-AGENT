@@ -107,7 +107,7 @@ def list_records(path: Path, kind: str, *, limit: int = 20, after: str | None = 
                 "SELECT record_id,published_at,source_ref FROM public_records "
                 "WHERE kind=? AND publication_state='published' AND withdrawn_at IS NULL "
                 "AND record_id>? ORDER BY record_id LIMIT ?",
-                (kind, after or "", limit + 1),
+                (kind, after_id, limit + 1),
             ).fetchall()
             items = [{"id": row[0], "published_at": row[1], "source_ref": row[2]}
                      for row in rows]
