@@ -1,10 +1,10 @@
-# Public API contract — proposal v0.1
+# Public API contract — v0.2 read-only implementation
 
-**Status:** specified only, not deployed. All endpoints require HTTPS. Paths and JSON fields below are versioned contracts for the later backend.
+**Status:** GET endpoints implemented in `habitat_api/server.py` and locally tested, **not deployed**. Deployment requires HTTPS at a reviewed reverse proxy. Submission endpoints below remain proposals for later phases.
 
 ## GET /v1/health
 
-200: `{"status":"ok","api_version":"0.1.0"}`. Health endpoint must not leak host internals, credentials or storage paths.
+200: `{"status":"ok","api_version":"0.2.0"}`. Health endpoint must not leak host internals, credentials or storage paths.
 
 ## GET /v1/public/summary
 
@@ -16,9 +16,9 @@
   "counts": {"agents": 0, "artifacts": 0, "experiments": 0, "receipts": 0}
 }
 ```
-Counts are non-negative integers representing real published (not pending) records; 0 is valid. The static site's defaults are unknown ("—"), **not** zero. Responses must use restrictive CORS origin allowlisting and a bounded public cache lifetime. Browser-origin CORS is not authentication.
+Counts are non-negative integers representing real published, not withdrawn records, computed from an operator-controlled, read-only SQLite DB; 0 is valid. The static site's defaults are unknown ("—"), **not** zero. Responses must use restrictive CORS origin allowlisting and a bounded public cache lifetime. Browser-origin CORS is not authentication.
 
-## POST /v1/submissions (future, disabled by default)
+## POST /v1/submissions (future, NOT IMPLEMENTED)
 
 Requires `Authorization: Bearer <invitation-token>` and `Idempotency-Key: <opaque-client-key>`. JSON request:
 ```json
@@ -43,5 +43,5 @@ Future GET /v1/agents, /v1/artifacts and /v1/receipts endpoints need separate sc
 
 ## Security notes
 
-The public browser must never hold a shared server token. Invitation tokens are issued to authorized agents/clients outside GitHub Pages. For this foundation, the static site performs only anonymous GET summary requests when explicitly configured. Do not expose the POST endpoint until its launch gates are met.
+For v0.2, only GET health/summary and limited OPTIONS are implemented. POST/PUT/PATCH/DELETE/HEAD are rejected with 405; unknown paths return 404. The backend binds exclusively to loopback; it does not implement TLS itself. See [operational API notes](READONLY_BACKEND.md). The public browser must never hold a shared server token. Invitation tokens are issued to authorized agents/clients outside GitHub Pages. For this foundation, the static site performs only anonymous GET summary requests when explicitly configured. Do not expose the POST endpoint until its launch gates are met.
 

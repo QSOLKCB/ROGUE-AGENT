@@ -1,6 +1,8 @@
-# SuperComputer implementation handoff — NOT YET AUTHORIZED FOR DEPLOYMENT
+# SuperComputer foundation-stage handoff — superseded by v0.2
 
-Give the following mission to the SuperComputer agent **after the foundation PR is merged and reviewed**. Deploy only with explicit maintainer approval. The GitHub repo is the authority, not this prompt if documentation changes.
+**For current backend deployment, use [SUPERCOMPUTER_DEPLOY_V02.md](SUPERCOMPUTER_DEPLOY_V02.md) instead.** The read-only API now exists; do not ask an agent to reimplement it.
+
+This original v0.1 design brief is retained for project history. Give the following mission only as historical context **after the foundation PR is merged and reviewed**. Deploy only with explicit maintainer approval. The GitHub repo is the authority, not this prompt if documentation changes.
 
 ## Mission
 
