@@ -3,6 +3,7 @@ import http.client
 import json
 from pathlib import Path
 import sqlite3
+import socket
 import tempfile
 import threading
 import unittest
@@ -136,6 +137,44 @@ class ReadOnlyAPITests(unittest.TestCase):
             init_db(self.db)
         with sqlite3.connect(self.db) as conn:
             self.assertEqual(conn.execute("SELECT COUNT(*) FROM public_records").fetchone()[0], 0)
+
+    def test_ipv4_loopback_keeps_ipv4_socket_family(self):
+        self.assertEqual(self.server.address_family, socket.AF_INET)
+        self.assertEqual(self.server.server_address[0], "127.0.0.1")
+        self.assertEqual(self.request("GET", "/v1/health")[0], 200)
+
+    def test_ipv6_loopback_serves_health_and_summary_when_available(self):
+        if not socket.has_ipv6:
+            self.skipTest("This host has no IPv6 support")
+        # Probe the operating system independently of the server code. Do not
+        # skip an actual serve() failure: that was the original regression.
+        with socket.socket(socket.AF_INET6, socket.SOCK_STREAM) as probe:
+            try:
+                probe.bind(("::1", 0))
+            except OSError as exc:
+                self.skipTest(f"IPv6 loopback is disabled on this host: {exc}")
+
+        ipv6_server = serve(self.db, host="::1", port=0)
+        self.assertEqual(ipv6_server.address_family, socket.AF_INET6)
+        self.assertEqual(ipv6_server.server_address[0], "::1")
+        thread = threading.Thread(target=ipv6_server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            conn = http.client.HTTPConnection("::1", ipv6_server.server_port, timeout=3)
+            try:
+                conn.request("GET", "/v1/health")
+                response = conn.getresponse()
+                self.assertEqual(response.status, 200)
+                self.assertEqual(json.loads(response.read())["api_version"], "0.2.0")
+                conn.request("GET", "/v1/public/summary")
+            finally:
+                conn.close()
+            # The API still binds to the exact loopback host, never a wildcard.
+            self.assertEqual(ipv6_server.server_address[0], "::1")
+        finally:
+            ipv6_server.shutdown()
+            ipv6_server.server_close()
+            thread.join(timeout=2)
 
     def test_non_loopback_rejected_and_origin_validation(self):
         with self.assertRaises(ValueError):
