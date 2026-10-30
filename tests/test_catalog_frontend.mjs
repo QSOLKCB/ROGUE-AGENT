@@ -25,7 +25,7 @@ class Element {
   click() {this.events.click?.();}
 }
 
-async function run(apiBaseUrl, summary) {
+async function run(apiBaseUrl, summary, fetchDetail = null) {
   const nodes = new Map();
   const ids = ["catalog-status", "catalog-list", "catalog-detail", "catalog-prev", "catalog-next"];
   for (const id of ids) nodes.set(id, new Element(id));
@@ -43,6 +43,7 @@ async function run(apiBaseUrl, summary) {
   const fetch = async url => {
     requests.push(url);
     if (url === "./config.json") return {ok:true,json:async()=>({apiBaseUrl})};
+    if (fetchDetail && /\/v1\/(?:artifacts|receipts)\//.test(url)) return fetchDetail(url);
     if (url.includes("/v1/artifacts/a_")) {
       return {ok:true,json:async()=>({schema_version:1,item:{
         id:summary.items[0].id, title:"Test title",
@@ -94,4 +95,89 @@ test("invalid collection response cannot fabricate published items", async () =>
   });
   assert.equal(app.nodes.get("catalog-list").children.length, 0);
   assert.match(app.nodes.get("catalog-status").textContent, /unavailable/);
+});
+
+
+function deferred() {
+  let resolve, reject;
+  const promise = new Promise((yes, no) => {resolve = yes;reject = no;});
+  return {promise, resolve, reject};
+}
+const itemResult = (id, body) => ({schema_version:1,item:{
+  id, title:"Reviewed artifact", body, identity_status:"self_reported"
+}});
+const records = (ids) => ({
+  schema_version:1,items:ids.map(id=>({
+    id,title:"Reviewed " + id,published_at:"2026-10-30T00:00:00Z"
+  })),next_cursor:null
+});
+function inspect(app, index) {
+  const card = app.nodes.get("catalog-list").children[index];
+  const button = card.children.find(node => node.kind === "button");
+  assert.ok(button);
+  button.click();
+}
+
+test("valid Unicode code-point length is accepted, despite UTF-16 length > 8000", async () => {
+  const id = "a_" + "c".repeat(32);
+  const content = "🦘".repeat(3000) + "A".repeat(2100);
+  assert.equal(content.length, 8100);
+  assert.equal(Array.from(content).length, 5100);
+  const app = await run("https://habitat.example", records([id]), () => ({
+    ok:true,json:async()=>itemResult(id,content)
+  }));
+  inspect(app,0);
+  await flush();await flush();
+  const text = app.nodes.get("catalog-detail").children.find(x=>x.kind==="pre");
+  assert.ok(text,"valid published artifact must render");
+  assert.equal(text.textContent,content);
+});
+
+test("older detail success cannot overwrite the most recently selected record", async () => {
+  const id1="a_"+"a".repeat(32), id2="a_"+"b".repeat(32);
+  const pending = new Map([[id1,deferred()],[id2,deferred()]]);
+  const app=await run("https://habitat.example",records([id1,id2]),url => ({
+    ok:true,json:()=>pending.get(url.split("/").at(-1)).promise
+  }));
+  inspect(app,0);
+  inspect(app,1);
+  pending.get(id2).resolve(itemResult(id2,"SECOND record"));
+  await flush();await flush();
+  pending.get(id1).resolve(itemResult(id1,"FIRST record"));
+  await flush();await flush();
+  const detail=app.nodes.get("catalog-detail").children;
+  assert.ok(detail.some(node=>node.textContent==="Review record: "+id2));
+  assert.equal(detail.find(node=>node.kind==="pre")?.textContent,"SECOND record");
+  assert.ok(!detail.some(node=>node.textContent==="Review record: "+id1));
+});
+
+test("older detail failure cannot erase newer successful details", async () => {
+  const id1="a_"+"d".repeat(32),id2="a_"+"e".repeat(32);
+  const pending=new Map([[id1,deferred()],[id2,deferred()]]);
+  const app=await run("https://habitat.example",records([id1,id2]),url => ({
+    ok:true,json:()=>pending.get(url.split("/").at(-1)).promise
+  }));
+  inspect(app,0);
+  inspect(app,1);
+  pending.get(id2).resolve(itemResult(id2,"newer good record"));
+  await flush();await flush();
+  pending.get(id1).reject(new Error("Older response failed"));
+  await flush();await flush();
+  const detail=app.nodes.get("catalog-detail").children;
+  assert.equal(detail.find(node=>node.kind==="pre")?.textContent,"newer good record");
+  assert.ok(!detail.some(node=>/unavailable/i.test(node.textContent)));
+});
+
+test("switching collections invalidates an in-flight detail response", async () => {
+  const id="a_"+"f".repeat(32);
+  const pending=deferred();
+  const app=await run("https://habitat.example",records([id]),()=>({
+    ok:true,json:()=>pending.promise
+  }));
+  inspect(app,0);
+  app.tabs[1].click(); // switch to receipts while artifact detail is loading
+  await flush();await flush();
+  pending.resolve(itemResult(id,"obsolete artifact details"));
+  await flush();await flush();
+  assert.equal(app.nodes.get("catalog-detail").children.length,0);
 });
