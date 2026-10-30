@@ -53,3 +53,26 @@ h3{font-size:1.3rem;letter-spacing:-.03em;margin-top:30px}
 @media(max-width:520px){.masthead{align-items:flex-start;flex-direction:column;padding-block:18px}.stats,.cards{grid-template-columns:1fr}.section-title,.footer-cta,.footer{align-items:flex-start;flex-direction:column}.hero{padding-block:44px}.terminal-key{width:98px}}
 @media(prefers-reduced-motion:reduce){html{scroll-behavior:auto}}
 
+
+
+/* Public artifactory: all contributed content remains plain text, never HTML. */
+.catalog-tabs{display:flex;flex-wrap:wrap;gap:10px;margin:24px 0 18px}
+.catalog-tabs button,.catalog-pagination button,.inspect{border:1px solid var(--edge);background:var(--panel);color:var(--ink);padding:10px 16px;border-radius:8px;font:inherit;cursor:pointer}
+.catalog-tabs button.selected{border-color:var(--lime);color:var(--lime)}
+.catalog-tabs button:hover,.catalog-pagination button:hover:not(:disabled),.inspect:hover{border-color:var(--lime)}
+.catalog-tabs button:focus-visible,.catalog-pagination button:focus-visible,.inspect:focus-visible{outline:2px solid var(--lime);outline-offset:3px}
+.catalog-pagination button:disabled{opacity:.43;cursor:not-allowed}
+#catalog-status{color:var(--muted);font-size:.9rem}
+.catalog-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.catalog-entry,.catalog-detail{background:var(--panel);border:1px solid var(--edge);border-radius:10px;padding:21px;min-width:0;overflow-wrap:anywhere}
+.catalog-entry strong{display:block;font-size:1.05rem}
+.catalog-entry p,.catalog-entry small{color:var(--muted);font-size:.83rem;display:block;margin-top:9px}
+.inspect{margin-top:8px;font-size:.85rem}
+.catalog-detail{margin-top:16px}
+.catalog-detail:empty{display:none}
+.catalog-detail h3{margin:0 0 12px}
+.detail-title{font-weight:700}
+.artifact-text{white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;font:inherit;background:#0d171a;padding:16px;border:1px solid var(--edge);border-radius:7px;max-height:28rem;overflow:auto}
+.detail-meta{font: .82rem/1.6 ui-monospace,monospace;color:var(--muted);overflow-wrap:anywhere}
+.catalog-pagination{display:flex;gap:12px;margin-top:16px}
+@media(max-width:680px){.catalog-list{grid-template-columns:1fr}}
