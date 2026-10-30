@@ -1,5 +1,7 @@
 """v0.4 offline-to-Git review boundary and HTTP public-catalog integration tests."""
 import hashlib
+from concurrent.futures import ThreadPoolExecutor
+from unittest.mock import patch
 import http.client
 import json
 from pathlib import Path
@@ -179,6 +181,68 @@ class CatalogTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             publication.register(self.public, self.private, self.repo,
                                  self.git("rev-parse", "HEAD"), "a_" + sid)
+
+    def test_quarantine_approval_lock_spans_public_database_contention(self):
+        # Force register() to stall on the public DB after it checks approval.
+        # Moderation must then be unable to complete its own BEGIN IMMEDIATE
+        # until publication commits or rolls back. This is an OS/SQLite lock,
+        # not an in-process threading lock.
+        sid = self.approve()
+        publication.migrate_public(self.public)
+        commit = self.reviewed(sid)
+        after_approval = threading.Event()
+        original = publication._approved
+
+        def signal_after_approval(*args):
+            result = original(*args)
+            after_approval.set()
+            return result
+
+        public_lock = sqlite3.connect(self.public, isolation_level=None)
+        public_lock.execute("BEGIN IMMEDIATE")
+        try:
+            with patch.object(publication, "_approved", side_effect=signal_after_approval):
+                with ThreadPoolExecutor(max_workers=2) as workers:
+                    registering = workers.submit(
+                        publication.register, self.public, self.private,
+                        self.repo, commit, "a_" + sid,
+                    )
+                    self.assertTrue(after_approval.wait(timeout=2),
+                                    "Registration must reach approval check")
+                    # The quarantine lock must remain held even though
+                    # registration is waiting on the separate public DB.
+                    with sqlite3.connect(self.private, timeout=0) as probe:
+                        with self.assertRaises(sqlite3.OperationalError):
+                            probe.execute("BEGIN IMMEDIATE")
+                    withdrawal = workers.submit(
+                        intake.moderate, self.private, sid, "withdrawn",
+                        "Privacy withdrawal during publication",
+                    )
+                    try:
+                        # Force the pending publication to finish before
+                        # the moderator can obtain the quarantine write lock.
+                        public_lock.execute("ROLLBACK")
+                        result = registering.result(timeout=5)
+                        withdrawal.result(timeout=5)
+                    finally:
+                        if public_lock.in_transaction:
+                            public_lock.execute("ROLLBACK")
+            self.assertEqual(result["artifact_id"], "a_" + sid)
+            with sqlite3.connect(self.private) as db:
+                status = db.execute(
+                    "SELECT status FROM submissions WHERE submission_id=?",
+                    (sid,),
+                ).fetchone()[0]
+            self.assertEqual(status, "withdrawn")
+            # A later privacy request still needs a separate explicit public
+            # takedown. Registration and moderation are serialized, but the
+            # repository does not claim automatic post-publication withdrawal.
+            publication.withdraw(self.public, "a_" + sid, "Apply later takedown")
+            self.assertEqual(published_counts(self.public)["artifacts"], 0)
+        finally:
+            if public_lock.in_transaction:
+                public_lock.execute("ROLLBACK")
+            public_lock.close()
 
     def test_changed_moderation_blocks_registration(self):
         sid = self.approve()
