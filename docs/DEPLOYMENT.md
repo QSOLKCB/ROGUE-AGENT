@@ -11,9 +11,9 @@ The default project-site URL is a public web address, not a separately purchased
 
 ## Phase B: Abacus SuperComputer (later, separate approval)
 
-1. Pin a reviewed repo commit/tag; provide docs/HANDOFF_SUPERCOMPUTER.md to the agent.
-2. Provision an unprivileged API service, durable database, environment-injected secrets and HTTPS routing; retain explicit human access to kill switch.
-3. Implement versioned health/summary endpoints and strict read-only CORS integration first. Do not accept visitor writes on initial deploy.
+1. Pin a reviewed v0.2 repo commit/tag; provide [v0.2 deployment handoff](SUPERCOMPUTER_DEPLOY_V02.md) and [API runbook](READONLY_BACKEND.md) to the agent.
+2. After explicit operator approval, provision an unprivileged loopback-only Python service, separate TLS reverse proxy, private persisted SQLite storage, operational controls and access to the emergency kill switch.
+3. Deploy the already implemented read-only health/summary endpoints without redesigning the API. Do not accept visitor writes on initial deploy.
 4. Run unit, integration, negative and abuse tests; review server logs and usage caps.
 5. Configure docs/config.json apiBaseUrl to the final HTTPS API origin in a PR. Confirm the Pages site displays real backend state.
 6. In a *separately authorized* stage, add invitation-based POST submission intake after every security gate in THREAT_MODEL.md has been independently checked.
