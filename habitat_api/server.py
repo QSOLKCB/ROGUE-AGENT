@@ -1,7 +1,7 @@
-"""A deliberately small, stdlib-only, read-only HTTP API.
+"""A small, stdlib-only HTTP API with read-only public collections.
 
 Bind to loopback; put a reviewed TLS reverse proxy in front of this service.
-No user-controlled code is executed and no submission endpoint is implemented.
+Public GET collections never write. Optional v0.3 submission intake stays gated.
 """
 
 from __future__ import annotations
@@ -19,11 +19,11 @@ import socket
 import sqlite3
 import threading
 import time
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
-from . import intake
+from . import catalog, intake
 
-API_VERSION = "0.3.0"
+API_VERSION = "0.4.0"
 SCHEMA_VERSION = 1
 KINDS = ("agents", "artifacts", "experiments", "receipts")
 MAX_SAFE_INTEGER = 2**53 - 1
@@ -158,6 +158,36 @@ class IPv6LimitedHTTPServer(LimitedHTTPServer):
     address_family = socket.AF_INET6
 
 
+def _catalog_request(target: str):
+    """Return (kind, identifier, limit, after) or None; no ambiguous routes."""
+    parsed = urlsplit(target)
+    if parsed.fragment or parsed.scheme or parsed.netloc:
+        return None
+    parts = parsed.path.split("/")
+    if len(parts) not in (3, 4) or parts[:2] != ["", "v1"]:
+        return None
+    kind = parts[2]
+    if kind not in catalog.COLLECTIONS:
+        return None
+    if len(parts) == 4:
+        if kind not in ("artifacts", "receipts") or not parts[3] or parsed.query:
+            return None
+        return kind, parts[3], None, None
+    try:
+        params = parse_qs(parsed.query, keep_blank_values=True,
+                          strict_parsing=True, max_num_fields=2) if parsed.query else {}
+    except ValueError:
+        raise catalog.CatalogError(400, "invalid_collection_request") from None
+    if set(params) - {"limit", "after"} or any(len(values) != 1 for values in params.values()):
+        raise catalog.CatalogError(400, "invalid_collection_request")
+    raw_limit = params.get("limit", ["20"])[0]
+    if not raw_limit.isascii() or not raw_limit.isdecimal() or len(raw_limit) > 2:
+        raise catalog.CatalogError(400, "invalid_collection_request")
+    limit = int(raw_limit)
+    after = params.get("after", [None])[0]
+    return kind, None, limit, after
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "ROGUE-AGENT"
     sys_version = ""
@@ -215,12 +245,29 @@ class Handler(BaseHTTPRequestHandler):
                 return self._reject(503, "service_unavailable")
             now = datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
             return self._reply(200, {"schema_version": SCHEMA_VERSION, "generated_at": now, "counts": counts}, summary=True)
-        return self._reject(404, "not_found")
+        try:
+            request = _catalog_request(self.path)
+            if request is None:
+                return self._reject(404, "not_found")
+            kind, identifier, limit, after = request
+            if identifier is None:
+                response = catalog.list_records(self.server.db_path, kind, limit=limit, after=after)
+            else:
+                response = catalog.get_record(self.server.db_path, kind, identifier)
+        except catalog.CatalogError as exc:
+            return self._reject(exc.status, exc.message)
+        except (OSError, sqlite3.Error, ValueError):
+            return self._reject(503, "service_unavailable")
+        return self._reply(200, response, summary=True)
 
     def do_OPTIONS(self):
         if not self.server.limiter.allow(self.client_address[0]):
             return self._reject(429, "rate_limited")
-        if self.path not in ("/v1/health", "/v1/public/summary"):
+        try:
+            is_catalog = _catalog_request(self.path) is not None
+        except catalog.CatalogError:
+            is_catalog = False
+        if self.path not in ("/v1/health", "/v1/public/summary") and not is_catalog:
             return self._reject(404, "not_found")
         if self.server.disabled:
             return self._reject(503, "service_disabled")
@@ -245,7 +292,11 @@ class Handler(BaseHTTPRequestHandler):
             return self._reject(503, "service_disabled")
         if self.path != "/v1/submissions" or not self.server.intake_enabled:
             # Preserve RFC method discovery for the existing read-only routes.
-            allow = "GET, OPTIONS" if self.path in ("/v1/health", "/v1/public/summary") else None
+            try:
+                is_catalog = _catalog_request(self.path) is not None
+            except catalog.CatalogError:
+                is_catalog = False
+            allow = "GET, OPTIONS" if self.path in ("/v1/health", "/v1/public/summary") or is_catalog else None
             return self._reject(405, "method_not_allowed", allow=allow)
         # No browser-based credential handling. Agents use direct HTTPS clients.
         # An Origin header is rejected even if it matches the public Pages origin.
@@ -285,7 +336,12 @@ class Handler(BaseHTTPRequestHandler):
     def _no_writes(self):
         if not self.server.limiter.allow(self.client_address[0]):
             return self._reject(429, "rate_limited")
-        return self._reject(405, "method_not_allowed", allow="GET, OPTIONS" if self.path in ("/v1/health", "/v1/public/summary") else None)
+        try:
+            is_catalog = _catalog_request(self.path) is not None
+        except catalog.CatalogError:
+            is_catalog = False
+        allow = "GET, OPTIONS" if self.path in ("/v1/health", "/v1/public/summary") or is_catalog else None
+        return self._reject(405, "method_not_allowed", allow=allow)
 
     do_PUT = do_PATCH = do_DELETE = do_HEAD = do_TRACE = do_CONNECT = _no_writes
 
