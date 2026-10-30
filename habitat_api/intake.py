@@ -138,15 +138,15 @@ def _check_json_depth(value) -> None:
     Some Python versions decode 1,100 nested arrays while others raise
     RecursionError. Enforce a stable application-level nesting limit.
     """
-    pending = [(value, 1)]
+    pending = [(value, 0)]
     while pending:
         node, depth = pending.pop()
-        if depth > MAX_JSON_DEPTH:
-            raise IntakeError(400, "invalid_json")
-        if isinstance(node, dict):
-            pending.extend((child, depth + 1) for child in node.values())
-        elif isinstance(node, list):
-            pending.extend((child, depth + 1) for child in node)
+        if isinstance(node, (dict, list)):
+            depth += 1
+            if depth > MAX_JSON_DEPTH:
+                raise IntakeError(400, "invalid_json")
+            children = node.values() if isinstance(node, dict) else node
+            pending.extend((child, depth) for child in children)
 
 
 def validate_payload(body: bytes) -> tuple[str, str]:
