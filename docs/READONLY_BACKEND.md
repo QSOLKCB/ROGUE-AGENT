@@ -48,3 +48,7 @@ Run `python3 -m unittest discover -s tests -v` and `node --test tests/test_front
 ## v0.3 compatibility
 
 The health API version is now `0.3.0` when using new code. Without both opt-in gates, the server still rejects POST and remains read-only. See [QUARANTINE_V03.md](QUARANTINE_V03.md) for the separately authorized quarantine.
+
+## v0.4 compatibility note
+
+The API version becomes 0.4.0. Existing health/summary remains compatible with public DB v1 and migrated v2. New catalog GET routes return 503 until an offline public database migration to v2 is completed. No web endpoint can migrate or register artifacts. See [ARTIFACTORY_V04.md](ARTIFACTORY_V04.md).
