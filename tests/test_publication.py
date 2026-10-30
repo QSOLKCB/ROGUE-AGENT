@@ -336,6 +336,75 @@ class CatalogTests(unittest.TestCase):
             with self.assertRaises(catalog.CatalogError):
                 catalog.list_records(self.public, "agents", after=bad)
 
+    def test_cursor_roundtrip_for_existing_opaque_non_url_safe_ids(self):
+        publication.migrate_public(self.public)
+        ids = ["agent:1", "agent:2", "agent/3?unicode=🦘", "agent " + "x" * 180]
+        with sqlite3.connect(self.public) as db:
+            for identifier in ids:
+                db.execute(
+                    "INSERT INTO public_records "
+                    "(record_id,kind,publication_state,source_ref,published_at) "
+                    "VALUES (?, 'agents', 'published', ?, ?)",
+                    (identifier, "reviewed:legacy", "2026-10-30T00:00:00Z")
+                )
+        observed = []
+        cursor = None
+        while True:
+            result = catalog.list_records(self.public, "agents", limit=1, after=cursor)
+            self.assertEqual(len(result["items"]), 1)
+            observed.append(result["items"][0]["id"])
+            cursor = result["next_cursor"]
+            if cursor is None:
+                break
+            self.assertTrue(cursor.startswith("v1_"))
+            self.assertNotIn(":", cursor)
+            self.assertNotIn("/", cursor)
+            self.assertLessEqual(len(cursor), catalog.MAX_CURSOR_CHARS)
+        # SQLite lexicographical ordering is authoritative for pagination.
+        self.assertEqual(observed, sorted(ids))
+        for malformed in ("agent:1", "v1_", "v1_!", "v1_a", "v1__w",
+                          "v1_" + "a" * (catalog.MAX_CURSOR_CHARS + 1)):
+            with self.subTest(malformed=malformed[:30]):
+                with self.assertRaises(catalog.CatalogError) as ctx:
+                    catalog.list_records(self.public, "agents", limit=1, after=malformed)
+                self.assertEqual(ctx.exception.status, 400)
+
+    def test_http_roundtrip_cursor_for_colon_identifier(self):
+        from urllib.parse import quote
+        publication.migrate_public(self.public)
+        with sqlite3.connect(self.public) as db:
+            for identifier in ("agent:1", "agent:2"):
+                db.execute(
+                    "INSERT INTO public_records "
+                    "(record_id,kind,publication_state,source_ref,published_at) "
+                    "VALUES (?, 'agents', 'published', ?, ?)",
+                    (identifier, "reviewed:legacy", "2026-10-30T00:00:00Z")
+                )
+        server = serve(self.public, port=0)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            def get(path):
+                conn = http.client.HTTPConnection("127.0.0.1", server.server_port, timeout=3)
+                try:
+                    conn.request("GET", path)
+                    response = conn.getresponse()
+                    self.assertEqual(response.status, 200)
+                    return json.loads(response.read())
+                finally:
+                    conn.close()
+            first = get("/v1/agents?limit=1")
+            self.assertEqual(first["items"][0]["id"], "agent:1")
+            cursor = first["next_cursor"]
+            self.assertTrue(cursor.startswith("v1_"))
+            second = get("/v1/agents?limit=1&after=" + quote(cursor, safe=""))
+            self.assertEqual(second["items"][0]["id"], "agent:2")
+            self.assertIsNone(second["next_cursor"])
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join(timeout=2)
+
     def test_http_catalog_contract_and_no_writes(self):
         publication.migrate_public(self.public)
         server = serve(self.public, port=0)
