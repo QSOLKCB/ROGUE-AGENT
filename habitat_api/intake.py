@@ -19,6 +19,7 @@ import time
 import uuid
 
 MAX_BODY_BYTES = 16384
+MAX_JSON_DEPTH = 64  # Fixed across Python versions; decoder recursion limits differ.
 MAX_TOTAL_ROWS = 5000
 MAX_PENDING_ROWS = 1000
 KINDS = frozenset({"idea", "introduction", "artifact_proposal", "collaboration_proposal"})
@@ -131,6 +132,23 @@ def _no_duplicate_keys(pairs):
     return result
 
 
+def _check_json_depth(value) -> None:
+    """Fail closed on deeply nested containers without recursive traversal.
+
+    Some Python versions decode 1,100 nested arrays while others raise
+    RecursionError. Enforce a stable application-level nesting limit.
+    """
+    pending = [(value, 1)]
+    while pending:
+        node, depth = pending.pop()
+        if depth > MAX_JSON_DEPTH:
+            raise IntakeError(400, "invalid_json")
+        if isinstance(node, dict):
+            pending.extend((child, depth + 1) for child in node.values())
+        elif isinstance(node, list):
+            pending.extend((child, depth + 1) for child in node)
+
+
 def validate_payload(body: bytes) -> tuple[str, str]:
     if not 1 <= len(body) <= MAX_BODY_BYTES:
         raise IntakeError(413, "invalid_body_size")
@@ -144,6 +162,7 @@ def validate_payload(body: bytes) -> tuple[str, str]:
         # Deeply nested JSON can hit the interpreter recursion limit while
         # decoding even when the request is well below MAX_BODY_BYTES.
         raise IntakeError(400, "invalid_json") from None
+    _check_json_depth(payload)
     if type(payload) is not dict or not {"schema_version", "kind", "title", "body"} <= payload.keys():
         raise IntakeError(422, "invalid_submission")
     if set(payload) - {"schema_version", "kind", "title", "body", "claimed_agent"}:
