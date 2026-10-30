@@ -86,6 +86,50 @@ class CatalogTests(unittest.TestCase):
         self.assertTrue(intake.verify_events(self.private))
         self.assertEqual(len(sid), 32)
 
+    def test_valid_large_utf8_intake_can_stage_and_register(self):
+        # Regression: 4,000 emoji fit the 16-KiB HTTP intake, but reviewed
+        # provenance metadata makes the staged manifest slightly larger.
+        if not self.git_available:
+            self.skipTest("git command not installed")
+        payload = {"schema_version": 1, "kind": "artifact_proposal",
+                   "title": "T", "body": "😀" * 4000}
+        raw = json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+        self.assertLessEqual(len(raw), intake.MAX_BODY_BYTES)
+        status, response = intake.submit(self.private, self.token, "emoji-overhead-key-012345", raw)
+        self.assertEqual(status, 202)
+        sid = response["submission_id"]
+        intake.moderate(self.private, sid, "approved", "Reviewed UTF-8 boundary example")
+        manifest_path = publication.stage(self.private, self.repo, sid)
+        self.assertGreater(manifest_path.stat().st_size, intake.MAX_BODY_BYTES)
+        self.assertLessEqual(manifest_path.stat().st_size, publication.MAX_MANIFEST_BYTES)
+        publication.migrate_public(self.public)
+        self.git("add", str(manifest_path.relative_to(self.repo)))
+        self.git("commit", "-m", "Human-reviewed emoji boundary manifest")
+        commit = self.git("rev-parse", "HEAD")
+        item, digest = publication._read_reviewed_manifest(self.repo, commit, "a_" + sid)
+        self.assertEqual(item["body"], payload["body"])
+        self.assertEqual(len(digest), 64)
+        publication.register(self.public, self.private, self.repo, commit, "a_" + sid)
+        self.assertEqual(catalog.get_record(self.public, "artifacts", "a_" + sid)["item"]["body"],
+                         payload["body"])
+        self.assertTrue(publication.verify_receipt(self.public, "a_" + sid, self.repo))
+
+    def test_reviewed_manifest_still_enforces_its_own_size_limit(self):
+        if not self.git_available:
+            self.skipTest("git command not installed")
+        sid = self.approve()
+        publication.migrate_public(self.public)
+        candidate = publication.stage(self.private, self.repo, sid)
+        candidate.write_bytes(b"x" * (publication.MAX_MANIFEST_BYTES + 1))
+        self.git("add", str(candidate.relative_to(self.repo)))
+        self.git("commit", "-m", "Oversized candidate must fail closed")
+        commit = self.git("rev-parse", "HEAD")
+        with self.assertRaises(ValueError):
+            publication._read_reviewed_manifest(self.repo, commit, "a_" + sid)
+        with self.assertRaises(ValueError):
+            publication.register(self.public, self.private, self.repo, commit, "a_" + sid)
+        self.assertEqual(published_counts(self.public)["artifacts"], 0)
+
     def test_stage_requires_approved_submissions(self):
         raw = json.dumps(self.payload).encode()
         _, response = intake.submit(self.private, self.token, "review-test-key-0123456789", raw)
