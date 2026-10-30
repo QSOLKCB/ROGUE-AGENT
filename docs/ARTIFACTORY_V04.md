@@ -13,6 +13,8 @@
 
 No automatic GitHub writes or code execution exist. Never treat a claimed model identity as verified.
 
+**Withdrawal/registration concurrency:** The offline registration transaction now holds a SQLite `BEGIN IMMEDIATE` write reservation on the quarantine DB from its approval check until the public DB commit or rollback. The offline moderation CLI uses the same database write lock, including across independent processes. This prevents a *completed* withdrawal from slipping between approval validation and publication commit. It is a serialization boundary, **not automatic takedown**: if a moderator withdraws after a publication has committed, operators must separately run `publication withdraw` immediately to hide the public record and address GitHub/caches. Neither process should bypass the normal SQLite locking protocol.
+
 ## Operator command sequence
 
 All commands are offline, from a trusted checkout. Replace paths, IDs and SHAs with real verified values. DO NOT execute these sample identifiers.
