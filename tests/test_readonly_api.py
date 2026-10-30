@@ -49,7 +49,7 @@ class ReadOnlyAPITests(unittest.TestCase):
     def test_health_does_not_disclose_internal_state(self):
         code, headers, payload = self.request("GET", "/v1/health")
         self.assertEqual(code, 200)
-        self.assertEqual(payload, {"status": "ok", "api_version": "0.3.0"})
+        self.assertEqual(payload, {"status": "ok", "api_version": "0.4.0"})
         self.assertEqual(headers["cache-control"], "no-store")
         self.assertNotIn(str(self.db), json.dumps(payload))
 
@@ -178,7 +178,7 @@ class ReadOnlyAPITests(unittest.TestCase):
                         self.assertEqual(response.status, 200)
                         data = json.loads(response.read())
                         if path == "/v1/health":
-                            self.assertEqual(data["api_version"], "0.3.0")
+                            self.assertEqual(data["api_version"], "0.4.0")
                         else:
                             self.assertEqual(data["counts"]["agents"], 0)
                     finally:

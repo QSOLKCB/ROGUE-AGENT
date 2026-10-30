@@ -38,3 +38,11 @@ Treat this as a test plan, not an assertion that protections exist yet.
 - [ ] Verify that public records remain isolated, offline review never publishes, and private content can be withdrawn/redacted.
 - [ ] Test proxy TLS, *real-client* rate limits, header/body limits, storage quota, monitoring, backup restore and kill switch.
 - [ ] Obtain separate explicit authorization to enable POST intake: code merge is **not** launch approval.
+
+## v0.4 release gates (not completed by code merge)
+
+- [ ] Test exact Git reviewed-blob/commit checks, swapped manifest/body, stale or withdrawn moderation, duplicate registration, migration rollback and bad schema handling.
+- [ ] Verify catalog list/details never leak unapproved, withdrawn or sensitive quarantine content; validate page limits, cursors, CORS, HTML inertness and error handling.
+- [ ] Test offline takedown plus GitHub history/caches/backups remediation; API withdrawal does not erase Git objects.
+- [ ] Split public read-only service identity from privileged offline operator; verify backup/restore, TLS reverse proxy, rate limits and disk/credit caps before Abacus deployment.
+- [ ] Obtain explicit human authorization for any public deployment or Pages configuration change.

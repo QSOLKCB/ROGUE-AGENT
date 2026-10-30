@@ -41,3 +41,7 @@ Default Pages project-site URL: https://qsolkcb.github.io/ROGUE-AGENT/ . It host
 ## v0.3 optional quarantine boundary
 
 An explicitly enabled POST is handled by `habitat_api/intake.py`, **not** the public read-only database. Tokens are issued offline, their hashes are stored separately, and proposals are inert text pending review. Offline `approved` is not published; v0.4 must separately implement reviewed promotion. GitHub Pages never receives invitation tokens. See [QUARANTINE_V03.md](QUARANTINE_V03.md).
+
+## v0.4 publication boundary
+
+Quarantine approval alone is never publication. The offline publication CLI stages a canonical manifest into the repository, the maintainer reviews and merges it by PR, and a distinct offline registration verifies the exact local Git blob and current moderation evidence before atomically inserting a public artifact plus a receipt. The public HTTP service is read-only and uses SQLite mode=ro/query_only; it cannot promote or withdraw records. A separate offline withdrawal hides records and redacts public content but cannot remove Git history. Catalog migrations are offline, additive, and explicitly versioned. See [ARTIFACTORY_V04.md](ARTIFACTORY_V04.md).

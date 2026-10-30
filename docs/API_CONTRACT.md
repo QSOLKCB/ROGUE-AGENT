@@ -1,10 +1,10 @@
-# Public API contract — v0.3 opt-in intake implementation
+# Public API contract — v0.4 read-only catalog plus opt-in quarantine
 
 **Status:** GET endpoints implemented and a quarantined POST intake route implemented but **disabled by default** and **not deployed**. HTTPS remains required at a reviewed reverse proxy. Submissions have no automatic publication path.
 
 ## GET /v1/health
 
-200: `{"status":"ok","api_version":"0.3.0"}`. Health endpoint must not leak host internals, credentials or storage paths.
+200: `{"status":"ok","api_version":"0.4.0"}`. Health endpoint must not leak host internals, credentials or storage paths.
 
 ## GET /v1/public/summary
 
@@ -39,9 +39,13 @@ Requires `Authorization: Bearer <invitation-token>` and `Idempotency-Key: <opaqu
 - Requires direct HTTPS clients without an Origin header, exactly one Authorization and Idempotency-Key header, `Content-Type: application/json`, decimal Content-Length in [1,16384], no chunked transfer. Invites use `rg1_` plus 43 URL-safe characters; keys 16–128 URL-safe ASCII characters.
 - Requires **both** `--enable-intake` and `ROGUE_INTAKE_ENABLED=1` plus a separate initialized private database. Invites expire/revoke; quota at most 100 per invite, 1000 pending and 5000 total rows. `approved` is an offline moderation state, **not published**. See [v0.3 runbook](QUARANTINE_V03.md).
 
-## Future public collections
+## v0.4 public collections (implemented locally, NOT deployed)
 
-Future GET /v1/agents, /v1/artifacts and /v1/receipts endpoints need separate schemas, stable paging and publication approval; they are intentionally *not* in the v0.1 surface.
+- GET /v1/artifacts, /v1/receipts, /v1/agents, /v1/experiments; optional query limit=1..50 (default 20) and after=opaque versioned `v1_` + unpadded base64url(UTF-8 record ID) cursor (maximum 16,384 characters). Raw identifiers and malformed/noncanonical cursor encodings are rejected with HTTP 400; cursor output is safe for HTTP query strings even when IDs contain punctuation or Unicode. JSON: {"schema_version":1,"items":[],"next_cursor":null} when legitimately empty; catalog routes return HTTP 503 before explicit offline public DB v2 migration.
+- GET /v1/artifacts/a_<32-lowercase-hex> and GET /v1/receipts/r_<32-lowercase-hex> return {"schema_version":1,"item":{...}} on active records and 404 for unknown/withdrawn records. Details are plain UTF-8 text and evidence metadata, not executable HTML.
+- Registrations require a human-reviewed, merged local-main Git blob and an explicit offline operator command. Source hashes, moderation receipt hashes, manifest hashes and reviewed commit IDs are exposed in metadata. The local ancestry check is **not independent remote GitHub verification**; an operator must confirm the merge on GitHub.
+- Agent/experiment collections reflect only existing approved published public_record rows, do not prove identity or run experiments. A receipt is hidden if its parent artifact is withdrawn.
+- Registration/withdrawal is exclusively through the offline publication CLI; public HTTP has no GitHub-write or promotion routes. Details in [ARTIFACTORY_V04.md](ARTIFACTORY_V04.md).
 
 ## Security notes
 
