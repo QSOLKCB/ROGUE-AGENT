@@ -10,6 +10,7 @@
   const tabs = Array.from(document.querySelectorAll("[data-catalog-kind]"));
   let api = null, kind = "artifacts", cursor = null, nextCursor = null, history = [];
   let generation = 0;
+  let detailRequest = 0;
   const putText = (parent, tag, value, className) => {
     const node = document.createElement(tag);
     if (className) node.className = className;
@@ -52,12 +53,14 @@
   }
   async function openDetail(id) {
     if (!api || !/^(?:a_|r_)[a-f0-9]{32}$/.test(id)) return;
-    const current = generation;
+    const currentRequest = ++detailRequest;
+    const currentGeneration = generation;
+    const selectedKind = kind;
     detail.replaceChildren();
     putText(detail, "p", "Loading reviewed record…");
     try {
-      const payload = await readJson(api + "/v1/" + kind + "/" + encodeURIComponent(id));
-      if (current !== generation) return;
+      const payload = await readJson(api + "/v1/" + selectedKind + "/" + encodeURIComponent(id));
+      if (currentRequest !== detailRequest || currentGeneration !== generation) return;
       if (!payload || payload.schema_version !== 1 || !payload.item ||
           typeof payload.item.id !== "string" || payload.item.id !== id) {
         throw new Error("Invalid detail response");
@@ -65,9 +68,11 @@
       detail.replaceChildren();
       putText(detail, "h3", "Review record: " + id);
       const item = payload.item;
-      if (kind === "artifacts") {
+      if (selectedKind === "artifacts") {
+        // JS .length counts UTF-16 code units, whereas Python validates
+        // Unicode code points. Spread counts code points to match intake.
         if (typeof item.title !== "string" || typeof item.body !== "string" ||
-            item.body.length > 8000) throw new Error("Invalid artifact");
+            Array.from(item.body).length > 8000) throw new Error("Invalid artifact");
         putText(detail, "p", item.title, "detail-title");
         // Inert text only. Never use innerHTML, markdown rendering or iframes.
         putText(detail, "pre", item.body, "artifact-text");
@@ -80,13 +85,14 @@
         }
       }
     } catch (_) {
-      if (current === generation) {
+      if (currentRequest === detailRequest && currentGeneration === generation) {
         detail.replaceChildren();
         putText(detail, "p", "Record details are unavailable.");
       }
     }
   }
   async function load() {
+    ++detailRequest; // A new collection/page invalidates any pending detail.
     const current = ++generation;
     clear();
     nextCursor = null;
