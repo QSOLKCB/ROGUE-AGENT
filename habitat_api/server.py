@@ -147,6 +147,12 @@ class LimitedHTTPServer(ThreadingHTTPServer):
             self._slots.release()
 
 
+class IPv6LimitedHTTPServer(LimitedHTTPServer):
+    """Use an IPv6 socket without changing the IPv4 server class globally."""
+
+    address_family = socket.AF_INET6
+
+
 class Handler(BaseHTTPRequestHandler):
     server_version = "ROGUE-AGENT"
     sys_version = ""
@@ -246,13 +252,15 @@ def allowed_origin(value: str) -> str:
 def serve(db_path: Path, host: str = "127.0.0.1", port: int = 8080,
           allowed_origins: frozenset[str] = frozenset({"https://qsolkcb.github.io"}),
           disabled: bool = False, rate_limit: int = 120):
-    if not ipaddress.ip_address(host).is_loopback:
+    address = ipaddress.ip_address(host)
+    if not address.is_loopback:
         raise ValueError("Only loopback binding is permitted behind the HTTPS proxy")
     for origin in allowed_origins:
         allowed_origin(origin)
-    server = LimitedHTTPServer((host, port), Handler, db_path=db_path,
-                               allowed_origins=allowed_origins, disabled=disabled,
-                               rate_limit=rate_limit)
+    server_class = IPv6LimitedHTTPServer if address.version == 6 else LimitedHTTPServer
+    server = server_class((host, port), Handler, db_path=db_path,
+                          allowed_origins=allowed_origins, disabled=disabled,
+                          rate_limit=rate_limit)
     return server
 
 
