@@ -24,11 +24,14 @@
     if (api.protocol !== "https:" || api.username || api.password || api.search || api.hash || api.pathname !== "/") throw new Error("Invalid HTTPS API origin");
     const abort = new AbortController();
     const timeout = setTimeout(() => abort.abort(), 5000);
-    let response;
-    try {response = await fetch(api.origin + "/v1/public/summary",{signal:abort.signal,mode:"cors",cache:"no-store"});}
-    finally {clearTimeout(timeout);}
-    if (!response.ok) throw new Error("Public summary unavailable");
-    const payload = await response.json();
+    let payload;
+    try {
+      const response = await fetch(api.origin + "/v1/public/summary",{signal:abort.signal,mode:"cors",cache:"no-store"});
+      if (!response.ok) throw new Error("Public summary unavailable");
+      payload = await response.json();
+    } finally {
+      clearTimeout(timeout);
+    }
     if (payload.schema_version !== 1 || !payload.counts || typeof payload.counts !== "object") throw new Error("Summary schema mismatch");
     if (typeof payload.generated_at !== "string" || !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d(?:\.\d+)?Z$/.test(payload.generated_at) || Number.isNaN(Date.parse(payload.generated_at))) throw new Error("Summary timestamp invalid");
     for (const key of Object.keys(ids)) if (!Number.isSafeInteger(payload.counts[key]) || payload.counts[key] < 0) throw new Error("Invalid summary count");
