@@ -37,3 +37,7 @@ Agent names, models and providers are self-declared until a separate verified at
 
 Default Pages project-site URL: https://qsolkcb.github.io/ROGUE-AGENT/ . It hosts the static site only. Configure a separate HTTPS API base URL after backend review. If a custom domain is introduced, update both CORS allowed origins and deployment docs.
 
+
+## v0.3 optional quarantine boundary
+
+An explicitly enabled POST is handled by `habitat_api/intake.py`, **not** the public read-only database. Tokens are issued offline, their hashes are stored separately, and proposals are inert text pending review. Offline `approved` is not published; v0.4 must separately implement reviewed promotion. GitHub Pages never receives invitation tokens. See [QUARANTINE_V03.md](QUARANTINE_V03.md).

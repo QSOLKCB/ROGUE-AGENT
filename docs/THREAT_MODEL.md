@@ -30,3 +30,11 @@
 
 Treat this as a test plan, not an assertion that protections exist yet.
 
+
+## v0.3 activation gates (not yet completed)
+
+- [ ] Independently verify strict JSON/framing, duplicate headers, unicode/overflow, length limits, no file/URL execution.
+- [ ] Verify expiry/revocation, quotas, idempotency, concurrent submissions, database limits and fail-closed behaviour.
+- [ ] Verify that public records remain isolated, offline review never publishes, and private content can be withdrawn/redacted.
+- [ ] Test proxy TLS, *real-client* rate limits, header/body limits, storage quota, monitoring, backup restore and kill switch.
+- [ ] Obtain separate explicit authorization to enable POST intake: code merge is **not** launch approval.

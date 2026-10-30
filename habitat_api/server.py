@@ -21,7 +21,9 @@ import threading
 import time
 from urllib.parse import urlsplit
 
-API_VERSION = "0.2.0"
+from . import intake
+
+API_VERSION = "0.3.0"
 SCHEMA_VERSION = 1
 KINDS = ("agents", "artifacts", "experiments", "receipts")
 MAX_SAFE_INTEGER = 2**53 - 1
@@ -118,7 +120,10 @@ class LimitedHTTPServer(ThreadingHTTPServer):
     allow_reuse_address = True
 
     def __init__(self, address, handler, *, db_path: Path, allowed_origins: frozenset[str],
-                 disabled: bool = False, rate_limit: int = 120, concurrency: int = 16):
+                 disabled: bool = False, rate_limit: int = 120, concurrency: int = 16,
+                 intake_db: Path | None = None, intake_enabled: bool = False):
+        self.intake_db = intake_db
+        self.intake_enabled = intake_enabled
         self.db_path = db_path
         self.allowed_origins = allowed_origins
         self.disabled = disabled
@@ -233,12 +238,56 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.close_connection = True
 
+    def do_POST(self):
+        if not self.server.limiter.allow(self.client_address[0]):
+            return self._reject(429, "rate_limited")
+        if self.server.disabled:
+            return self._reject(503, "service_disabled")
+        if self.path != "/v1/submissions" or not self.server.intake_enabled:
+            # Preserve RFC method discovery for the existing read-only routes.
+            allow = "GET, OPTIONS" if self.path in ("/v1/health", "/v1/public/summary") else None
+            return self._reject(405, "method_not_allowed", allow=allow)
+        # No browser-based credential handling. Agents use direct HTTPS clients.
+        # An Origin header is rejected even if it matches the public Pages origin.
+        if self.headers.get("Origin") is not None:
+            return self._reject(403, "browser_writes_disabled")
+        if self.headers.get("Transfer-Encoding") is not None:
+            return self._reject(400, "unsupported_transfer_encoding")
+        if self.headers.get("Content-Type") != "application/json":
+            return self._reject(415, "unsupported_media_type")
+        auth = self.headers.get_all("Authorization", [])
+        keys = self.headers.get_all("Idempotency-Key", [])
+        if len(auth) != 1 or not auth[0].startswith("Bearer "):
+            return self._reject(401, "unauthorized")
+        if len(keys) != 1:
+            return self._reject(400, "invalid_idempotency_key")
+        lengths = self.headers.get_all("Content-Length", [])
+        if len(lengths) != 1 or not lengths[0].isascii() or not lengths[0].isdecimal():
+            return self._reject(411, "content_length_required")
+        # A huge decimal literal can exceed Python's integer-string limit.
+        # Bound its length before conversion rather than producing a 503.
+        if len(lengths[0]) > len(str(intake.MAX_BODY_BYTES)):
+            return self._reject(413, "invalid_body_size")
+        size = int(lengths[0])
+        if size < 1 or size > intake.MAX_BODY_BYTES:
+            return self._reject(413, "invalid_body_size")
+        try:
+            body = self.rfile.read(size)
+            if len(body) != size:
+                return self._reject(400, "truncated_request")
+            status, result = intake.submit(self.server.intake_db, auth[0][7:], keys[0], body)
+        except intake.IntakeError as exc:
+            return self._reject(exc.status, exc.error)
+        except (OSError, ValueError, sqlite3.Error):
+            return self._reject(503, "intake_unavailable")
+        return self._reply(status, result)
+
     def _no_writes(self):
         if not self.server.limiter.allow(self.client_address[0]):
             return self._reject(429, "rate_limited")
         return self._reject(405, "method_not_allowed", allow="GET, OPTIONS" if self.path in ("/v1/health", "/v1/public/summary") else None)
 
-    do_POST = do_PUT = do_PATCH = do_DELETE = do_HEAD = do_TRACE = do_CONNECT = _no_writes
+    do_PUT = do_PATCH = do_DELETE = do_HEAD = do_TRACE = do_CONNECT = _no_writes
 
 
 def allowed_origin(value: str) -> str:
@@ -251,16 +300,19 @@ def allowed_origin(value: str) -> str:
 
 def serve(db_path: Path, host: str = "127.0.0.1", port: int = 8080,
           allowed_origins: frozenset[str] = frozenset({"https://qsolkcb.github.io"}),
-          disabled: bool = False, rate_limit: int = 120):
+          disabled: bool = False, rate_limit: int = 120,
+          intake_db: Path | None = None, intake_enabled: bool = False):
     address = ipaddress.ip_address(host)
     if not address.is_loopback:
         raise ValueError("Only loopback binding is permitted behind the HTTPS proxy")
     for origin in allowed_origins:
         allowed_origin(origin)
+    if intake_enabled and (intake_db is None or intake_db.resolve() == db_path.resolve()):
+        raise ValueError("Enabled quarantine requires a separate SQLite database")
     server_class = IPv6LimitedHTTPServer if address.version == 6 else LimitedHTTPServer
     server = server_class((host, port), Handler, db_path=db_path,
                           allowed_origins=allowed_origins, disabled=disabled,
-                          rate_limit=rate_limit)
+                          rate_limit=rate_limit, intake_db=intake_db, intake_enabled=intake_enabled)
     return server
 
 
@@ -275,6 +327,8 @@ def main(argv=None):
     run.add_argument("--port", type=int, default=8080)
     run.add_argument("--allowed-origin", default="https://qsolkcb.github.io")
     run.add_argument("--rate-limit", type=int, default=120)
+    run.add_argument("--intake-db", type=Path, default=None)
+    run.add_argument("--enable-intake", action="store_true", help="requires explicit env gate too")
     args = parser.parse_args(argv)
     if args.command == "init-db":
         init_db(args.db)
@@ -282,9 +336,12 @@ def main(argv=None):
         return
     if args.rate_limit <= 0:
         parser.error("--rate-limit must be positive")
+    if args.enable_intake and os.environ.get("ROGUE_INTAKE_ENABLED") != "1":
+        parser.error("Intake requires ROGUE_INTAKE_ENABLED=1 as a second gate")
     server = serve(args.db, args.bind, args.port, frozenset({args.allowed_origin}),
                    disabled=os.environ.get("ROGUE_API_DISABLED", "0") == "1",
-                   rate_limit=args.rate_limit)
+                   rate_limit=args.rate_limit, intake_db=args.intake_db,
+                   intake_enabled=args.enable_intake)
     try:
         print(f"Read-only API listening on {args.bind}:{server.server_port} (loopback only)", flush=True)
         server.serve_forever(poll_interval=0.2)

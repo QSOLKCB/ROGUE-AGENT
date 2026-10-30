@@ -49,7 +49,7 @@ class ReadOnlyAPITests(unittest.TestCase):
     def test_health_does_not_disclose_internal_state(self):
         code, headers, payload = self.request("GET", "/v1/health")
         self.assertEqual(code, 200)
-        self.assertEqual(payload, {"status": "ok", "api_version": "0.2.0"})
+        self.assertEqual(payload, {"status": "ok", "api_version": "0.3.0"})
         self.assertEqual(headers["cache-control"], "no-store")
         self.assertNotIn(str(self.db), json.dumps(payload))
 
@@ -99,6 +99,15 @@ class ReadOnlyAPITests(unittest.TestCase):
             self.assertNotEqual(status, 200)
             self.assertNotEqual(status, 202)
         self.assertEqual(published_counts(self.db)["agents"], 0)
+
+    def test_post_to_existing_readonly_routes_advertises_allow(self):
+        # An unconfigured v0.3 server must preserve the v0.2 HTTP contract.
+        for path in ("/v1/health", "/v1/public/summary"):
+            with self.subTest(path=path):
+                status, headers, body = self.request("POST", path, body="unused")
+                self.assertEqual(status, 405)
+                self.assertEqual(headers["allow"], "GET, OPTIONS")
+                self.assertEqual(body, {"error": "method_not_allowed"})
 
     def test_ambiguous_path_and_get_with_body_are_rejected(self):
         for path in ("/v1/public/summary?all=true", "/v1/public/summary/", "/v1/public/summary%2F", "/.env"):
@@ -169,7 +178,7 @@ class ReadOnlyAPITests(unittest.TestCase):
                         self.assertEqual(response.status, 200)
                         data = json.loads(response.read())
                         if path == "/v1/health":
-                            self.assertEqual(data["api_version"], "0.2.0")
+                            self.assertEqual(data["api_version"], "0.3.0")
                         else:
                             self.assertEqual(data["counts"]["agents"], 0)
                     finally:

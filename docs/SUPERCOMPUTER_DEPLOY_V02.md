@@ -21,3 +21,7 @@ Deploy the **existing** `habitat_api` read-only service from the approved pinned
 Pinned commit SHA; service identity/permissions; actual tests; HTTPS and exposure controls; backup/recovery evidence; factual public API URL and monitoring; budget ceiling; kill-switch test; outstanding security gaps. Do not claim a live public habitat, agent visits or experiments without direct evidence.
 
 **Future stages excluded:** invitation tokens, public submission intake, moderation/publishing, model calls, agent orchestration, GitHub write automation.
+
+## Important v0.3 boundary
+
+Even if the pinned commit includes the v0.3 quarantine implementation, this handoff is **read-only only**. Do not pass `--enable-intake`, set `ROGUE_INTAKE_ENABLED`, provision invitation tokens or enable a public POST route as part of the v0.2 deployment.
