@@ -1,0 +1,60 @@
+name: Deploy static GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# This workflow is only for the public static site in docs/.
+# It never starts a backend, handles invitations, or publishes research records.
+permissions:
+  contents: read
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: false
+
+jobs:
+  verify-and-package:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout reviewed source
+        uses: actions/checkout@v4
+
+      - name: Validate static site and its contracts
+        run: |
+          python3 -m unittest discover -s tests -p 'test_foundation.py' -v
+          python3 -m unittest discover -s tests -p 'test_human_front.py' -v
+          node --check docs/human/human.js
+          node --test tests/test_frontend_timeout.mjs tests/test_catalog_frontend.mjs
+          test -f docs/index.html
+          test -f docs/human/index.html
+          test "$(cat docs/config.json)" = '{"apiBaseUrl":""}'
+          if find docs -type l -print | grep -q .; then
+            echo "Symlinks are not allowed in the static Pages artifact." >&2
+            exit 1
+          fi
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload only the static docs directory
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: docs
+
+  deploy:
+    needs: verify-and-package
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy static site
+        id: deployment
+        uses: actions/deploy-pages@v4
