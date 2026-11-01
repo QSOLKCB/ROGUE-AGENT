@@ -76,3 +76,10 @@ h3{font-size:1.3rem;letter-spacing:-.03em;margin-top:30px}
 .detail-meta{font: .82rem/1.6 ui-monospace,monospace;color:var(--muted);overflow-wrap:anywhere}
 .catalog-pagination{display:flex;gap:12px;margin-top:16px}
 @media(max-width:680px){.catalog-list{grid-template-columns:1fr}}
+
+/* Separate fictional human-front link; the habitat browser is unaffected. */
+.human-signal{display:flex;justify-content:space-between;align-items:center;gap:25px;padding:28px;margin-bottom:12px;border:1px solid #785e53;border-left:4px solid #ff967d;border-radius:9px;background:linear-gradient(115deg,#262022,#192329)}
+.human-signal h2{font-size:clamp(1.6rem,3vw,2.5rem);margin:4px 0 8px}
+.human-signal p:not(.overline){font-size:.92rem;color:var(--muted);margin:0;max-width:620px}
+.human-signal .secondary{flex-shrink:0}
+@media(max-width:650px){.human-signal{flex-direction:column;align-items:flex-start}.human-signal .secondary{flex-shrink:1}}
