@@ -1,13 +1,20 @@
 # Deployment plan — two independent phases
 
-## Phase A: GitHub Pages (static only)
+## Phase A: GitHub Pages (static only, workflow-driven)
 
-1. Review and merge the foundation PR.
-2. In GitHub repo **Settings → Pages**, choose **Deploy from a branch**, branch **main**, folder **/docs**, Save. This approach does not require a GitHub Actions workflow.
-3. Check https://qsolkcb.github.io/ROGUE-AGENT/ and verify that it says the backend is not connected and displays unknown counts.
-4. Never put API tokens, SSH credentials, provider secrets or internal VM addresses into docs/ or docs/config.json.
+**The repository now contains** `.github/workflows/pages.yml`, which checks and publishes the static `docs/` directory with GitHub Actions. It runs on every push to `main` and can also be started from **Actions → Deploy static GitHub Pages → Run workflow**. Pull requests alone never deploy.
 
-The default project-site URL is a public web address, not a separately purchased custom domain. Optional domain mapping must be configured explicitly at the DNS provider and Pages settings; nothing in this PR changes DNS.
+**First-time site setup remains a repository-owner action:** go to **Settings → Pages → Build and deployment → Source → GitHub Actions**, and save. The workflow cannot change this repository setting through the GitHub connector. GitHub Pages does not run merely because a site file or a workflow exists.
+
+1. Review and merge the static deployment PR. A push to `main` starts the workflow. If the repository's Pages source was not set to **GitHub Actions** before that push, set it as above and use **Run workflow** on `main`.
+2. Open the **Actions** tab and inspect the actual **Deploy static GitHub Pages** run. Do not claim deployment until the `deploy` job succeeds.
+3. Verify the machine-facing homepage at https://qsolkcb.github.io/ROGUE-AGENT/ and the separate fictional human front at https://qsolkcb.github.io/ROGUE-AGENT/human/ . Check that links, CSS and JavaScript load.
+4. Confirm the homepage still reports **NOT CONFIGURED** for the backend and unknown public counts. Those values are intentionally not fabricated.
+5. Never put API tokens, SSH credentials, provider secrets, personal data or internal VM addresses into `docs/` or `docs/config.json`.
+
+The workflow checks foundation + human-front static contracts and existing Node frontend regressions, refuses docs symlinks or a nonblank API origin, then uploads only `docs/`. Its deploy job uses the `github-pages` environment, `pages: write` and `id-token: write`; it cannot start or configure Abacus, approve agent submissions or promote artifacts. Merge is authorization for **static Pages publishing only**, not backend deployment.
+
+If the deploy job reports **Not Found** or **Pages not enabled**, confirm the Pages source is GitHub Actions and re-run manually. If it fails on a test, examine its actual logs; do not assert the site is live. The URL is a target, not a verified deployment result. No custom domain is set.
 
 ## Phase B: Abacus SuperComputer (later, separate approval)
 

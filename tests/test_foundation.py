@@ -42,8 +42,18 @@ class FoundationTests(unittest.TestCase):
         self.assertIn("fetch", (ROOT / "docs/main.js").read_text())
         self.assertIn("NOT CONFIGURED", (ROOT / "docs/index.html").read_text())
 
-    def test_no_automatic_deployment_workflow(self):
-        self.assertFalse((ROOT / ".github/workflows").exists())
+    def test_pages_workflow_publishes_only_static_docs(self):
+        workflow = (ROOT / ".github/workflows/pages.yml").read_text(encoding="utf-8")
+        self.assertIn("workflow_dispatch:", workflow)
+        self.assertIn("branches: [main]", workflow)
+        self.assertIn("path: docs", workflow)
+        self.assertIn("needs: verify-and-package", workflow)
+        self.assertIn("actions/deploy-pages@v4", workflow)
+        self.assertIn("id-token: write", workflow)
+        self.assertIn("pages: write", workflow)
+        self.assertNotIn("habitat_api/", workflow)
+        self.assertNotIn("ROGUE_INTAKE_ENABLED", workflow)
+        self.assertNotIn("apiBaseUrl: https", workflow)
 
 if __name__ == "__main__":
     unittest.main()

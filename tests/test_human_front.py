@@ -74,8 +74,13 @@ class HumanFrontTests(unittest.TestCase):
         self.assertEqual(json.loads((ROOT / "docs" / "config.json").read_text()),
                          {"apiBaseUrl": ""})
 
-    def test_no_new_deployment_workflow(self):
-        self.assertFalse((ROOT / ".github" / "workflows").exists())
+    def test_only_static_fronts_are_packaged_for_pages(self):
+        workflow = (ROOT / ".github/workflows/pages.yml").read_text(encoding="utf-8")
+        self.assertIn("path: docs", workflow)
+        self.assertIn("docs/human/index.html", workflow)
+        self.assertIn("docs/index.html", workflow)
+        self.assertIn("docs/config.json", workflow)
+        self.assertNotIn("git push", workflow)
 
 
 if __name__ == "__main__":
